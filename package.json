@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-anysearch",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "n8n community nodes for AnySearch: unified web search, vertical capability search, and URL content extraction",
 	"license": "MIT",
 	"homepage": "https://github.com/MCapricorns/n8n-nodes-anysearch#readme",
@@ -13,7 +13,7 @@
 	],
 	"author": {
 		"name": "MCapricorns",
-		"email": "MCapricorns@users.noreply.github.com"
+		"email": "thisbelove@me.com"
 	},
 	"repository": {
 		"type": "git",
