@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-anysearch",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "n8n community nodes for AnySearch: unified web search, vertical capability search, and URL content extraction",
 	"license": "MIT",
 	"homepage": "https://github.com/MCapricorns/n8n-nodes-anysearch#readme",
@@ -28,8 +28,12 @@
 		"prepublishOnly": "n8n-node prerelease"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"!dist/tsconfig.tsbuildinfo"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"n8n": {
 		"n8nNodesApiVersion": 1,
 		"strict": true,
