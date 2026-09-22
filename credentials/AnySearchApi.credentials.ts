@@ -1,4 +1,10 @@
-import type { ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
+import type {
+	IAuthenticateGeneric,
+	Icon,
+	ICredentialTestRequest,
+	ICredentialType,
+	INodeProperties,
+} from 'n8n-workflow';
 
 export class AnySearchApi implements ICredentialType {
 	name = 'anySearchApi';
@@ -24,19 +30,21 @@ export class AnySearchApi implements ICredentialType {
 		},
 	];
 
-	authenticate = {
-		type: 'generic' as const,
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
 		properties: {
 			headers: {
-				Authorization: '=Bearer {{$credentials.apiKey}}',
+				Authorization: '=Bearer {{$credentials?.apiKey}}',
 			},
 		},
 	};
 
 	// Does not consume search quota, so it is a safe connectivity check.
-	test = {
+	test: ICredentialTestRequest = {
 		request: {
-			url: 'https://api.anysearch.com/v1/domains',
+			baseURL: 'https://api.anysearch.com',
+			url: '/v1/domains',
+			method: 'GET',
 		},
 	};
 }
