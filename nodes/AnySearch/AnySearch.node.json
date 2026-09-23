@@ -1,8 +1,8 @@
 {
-	"node": "n8n-nodes-anysearch",
+	"node": "n8n-nodes-anysearch.anySearch",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["AI", "Utility"],
+	"categories": ["Utility"],
 	"resources": {
 		"credentialDocumentation": [
 			{
