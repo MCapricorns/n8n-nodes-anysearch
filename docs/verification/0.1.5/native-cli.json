@@ -1,0 +1,131 @@
+{
+  "startedAt": "2026-10-27T04:10:49.525Z",
+  "results": [
+    {
+      "id": "anonymous-search",
+      "status": 0,
+      "requests": [
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/search",
+          "authorizationPresent": false,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 3,
+      "passed": true
+    },
+    {
+      "id": "blank-key-search",
+      "status": 0,
+      "requests": [
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/search",
+          "authorizationPresent": false,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 1,
+      "requestId": "f62b573c-35a9-4cfe-b382-ffe7a5637222",
+      "passed": true
+    },
+    {
+      "id": "invalid-key-search",
+      "status": 1,
+      "requests": [
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/search",
+          "authorizationPresent": true,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": true
+        },
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/search",
+          "authorizationPresent": true,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "extract",
+      "status": 0,
+      "requests": [
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/extract",
+          "authorizationPresent": false,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 1,
+      "passed": true
+    },
+    {
+      "id": "domains",
+      "status": 0,
+      "requests": [
+        {
+          "method": "GET",
+          "host": "api.anysearch.com",
+          "path": "/v1/domains",
+          "authorizationPresent": false,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 17,
+      "passed": true
+    },
+    {
+      "id": "subdomains",
+      "status": 0,
+      "requests": [
+        {
+          "method": "GET",
+          "host": "api.anysearch.com",
+          "path": "/v1/sub-domains?domain=code&domain=finance",
+          "authorizationPresent": false,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 2,
+      "passed": true
+    },
+    {
+      "id": "valid-key-search",
+      "status": 0,
+      "requests": [
+        {
+          "method": "POST",
+          "host": "api.anysearch.com",
+          "path": "/v1/search",
+          "authorizationPresent": true,
+          "emptyBearer": false,
+          "syntheticFixtureBearer": false
+        }
+      ],
+      "itemCount": 1,
+      "requestId": "cef461dc-af34-46dc-8769-e9d008f64f7d",
+      "passed": true
+    }
+  ],
+  "credentialImport": {
+    "status": 0
+  },
+  "finishedAt": "2026-10-27T04:12:05.142Z",
+  "passed": true
+}

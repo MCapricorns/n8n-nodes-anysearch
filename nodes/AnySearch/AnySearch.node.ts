@@ -12,39 +12,41 @@ import type {
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 const API_BASE_URL = 'https://api.anysearch.com';
+const CREDENTIAL_NAME = 'anySearchApi';
 
 interface AnySearchEnvelope {
 	code?: number;
 	message?: string;
 	request_id?: string;
-	data?: {
-		results?: IDataObject[];
-		metadata?: IDataObject;
-		domains?: IDataObject[];
-		url?: string;
-		title?: string;
-		content?: string;
-	};
+	data?: IDataObject;
 }
 
 type AnySearchRequestContext = IExecuteFunctions | ILoadOptionsFunctions;
 
 /**
- * Detect whether the optional AnySearch credential is configured on the node.
- * Lives in its own function so anySearchRequest can pick the matching helper.
+ * Read the API key of the AnySearch credential selected on the node.
+ *
+ * Returns undefined when no credential is selected or when the saved key is
+ * blank (anonymous access). A credential that is selected but cannot be read or
+ * decrypted is a configuration error and must reach the caller: silently
+ * switching a saved authentication mode would misreport what was configured.
  */
-async function hasAnySearchCredential(this: AnySearchRequestContext): Promise<boolean> {
-	try {
-		await this.getCredentials('anySearchApi');
-		return true;
-	} catch {
-		return false;
+async function readApiKey(this: AnySearchRequestContext): Promise<string | undefined> {
+	if (this.getNode().credentials?.[CREDENTIAL_NAME] === undefined) {
+		return undefined;
 	}
+	const credentials = await this.getCredentials(CREDENTIAL_NAME);
+	const apiKey = credentials?.apiKey;
+	if (typeof apiKey !== 'string') {
+		return undefined;
+	}
+	const trimmed = apiKey.trim();
+	return trimmed === '' ? undefined : trimmed;
 }
 
 /**
- * Send one request to the AnySearch API using the node credential when it is
- * configured, and anonymous access otherwise.
+ * Send one request to the AnySearch API, authenticated when the node has a
+ * usable credential and anonymous otherwise.
  */
 async function anySearchRequest(
 	this: AnySearchRequestContext,
@@ -55,23 +57,78 @@ async function anySearchRequest(
 		...options,
 	};
 
-	let response: AnySearchEnvelope;
+	const apiKey = await readApiKey.call(this);
+	let response: unknown;
 	try {
-		response = (await hasAnySearchCredential.call(this))
-			? await this.helpers.httpRequestWithAuthentication.call(this, 'anySearchApi', requestOptions)
-			: await this.helpers.httpRequest(requestOptions);
+		response =
+			apiKey === undefined
+				? await this.helpers.httpRequest(requestOptions)
+				: await this.helpers.httpRequestWithAuthentication.call(this, CREDENTIAL_NAME, requestOptions);
 	} catch (error) {
 		throw toUpstreamError(this.getNode(), error);
 	}
 
-	if (typeof response.code === 'number' && response.code !== 0) {
-		const detail =
-			response.message && response.message.trim().length > 0
-				? response.message
-				: `AnySearch API error ${response.code}`;
-		throw new NodeOperationError(this.getNode(), detail);
+	return validateEnvelope(this.getNode(), response);
+}
+
+/**
+ * Reject responses that do not follow the documented envelope. An HTTP 200 with
+ * a body that is not `{code, data}` is a protocol error, not an empty result.
+ */
+function validateEnvelope(node: INode, response: unknown): AnySearchEnvelope {
+	if (typeof response !== 'object' || response === null || Array.isArray(response)) {
+		throw new NodeOperationError(
+			node,
+			'AnySearch returned an unexpected response: expected a JSON object.',
+		);
 	}
-	return response;
+	const envelope = response as AnySearchEnvelope;
+	if (typeof envelope.code !== 'number' || !Number.isFinite(envelope.code)) {
+		throw new NodeOperationError(node, 'AnySearch returned an unexpected response: missing or invalid code.');
+	}
+	if (envelope.code !== 0) {
+		const detail =
+			typeof envelope.message === 'string' && envelope.message.trim().length > 0
+				? envelope.message
+				: `AnySearch API error ${envelope.code}`;
+		throw new NodeOperationError(node, detail);
+	}
+	return envelope;
+}
+
+/**
+ * Read the `data` object of a response envelope, which every documented
+ * operation returns.
+ */
+function readDataObject(node: INode, envelope: AnySearchEnvelope, operation: string): IDataObject {
+	const data = envelope.data;
+	if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+		throw new NodeOperationError(node, `AnySearch ${operation} response is missing the data object.`);
+	}
+	return data;
+}
+
+/**
+ * Read an array field inside `data`. A missing array is an error and must not be
+ * reported as an empty result set.
+ */
+function readArrayField(
+	node: INode,
+	data: IDataObject,
+	field: string,
+	operation: string,
+): IDataObject[] {
+	const value = data[field];
+	if (!Array.isArray(value)) {
+		throw new NodeOperationError(
+			node,
+			`AnySearch ${operation} response is missing data.${field}.`,
+		);
+	}
+	if (value.some((entry) => typeof entry !== 'object' || entry === null || Array.isArray(entry))) {
+		throw new NodeOperationError(node, `AnySearch ${operation} response contains invalid data.${field} entries.`);
+	}
+	return value as IDataObject[];
 }
 
 /**
@@ -171,8 +228,9 @@ async function searchOperation(
 		body,
 	});
 
-	const data = envelope.data ?? {};
-	const results = data.results ?? [];
+	const data = readDataObject(this.getNode(), envelope, 'search');
+	const results = readArrayField(this.getNode(), data, 'results', 'search');
+	const metadata = (data.metadata as IDataObject | undefined) ?? {};
 	const simplify = options.simplify === undefined ? true : Boolean(options.simplify);
 
 	if (simplify) {
@@ -188,7 +246,7 @@ async function searchOperation(
 			json: {
 				request_id: envelope.request_id,
 				results,
-				metadata: data.metadata ?? {},
+				metadata,
 			},
 			pairedItem: {
 				item: itemIndex,
@@ -212,13 +270,26 @@ async function extractOperation(
 		body: { url },
 	});
 
-	const data = envelope.data ?? {};
+	const data = readDataObject(this.getNode(), envelope, 'extract');
+	const responseUrl = data.url;
+	const title = data.title;
+	const content = data.content;
+	if (
+		typeof responseUrl !== 'string' &&
+		typeof title !== 'string' &&
+		typeof content !== 'string'
+	) {
+		throw new NodeOperationError(
+			this.getNode(),
+			'AnySearch extract response is missing the extracted content.',
+		);
+	}
 	return [
 		{
 			json: {
-				url: data.url ?? url,
-				title: data.title ?? '',
-				content: data.content ?? '',
+				url: typeof responseUrl === 'string' && responseUrl !== '' ? responseUrl : url,
+				title: typeof title === 'string' ? title : '',
+				content: typeof content === 'string' ? content : '',
 			},
 			pairedItem: {
 				item: itemIndex,
@@ -237,7 +308,8 @@ async function capabilityOperation(
 			method: 'GET',
 			url: `${API_BASE_URL}/v1/domains`,
 		});
-		const domains = envelope.data?.domains ?? [];
+		const data = readDataObject(this.getNode(), envelope, 'capability');
+		const domains = readArrayField(this.getNode(), data, 'domains', 'capability');
 		return domains.map((domain) => ({
 			json: domain,
 			pairedItem: {
@@ -260,7 +332,8 @@ async function capabilityOperation(
 			method: 'GET',
 			url: `${API_BASE_URL}/v1/sub-domains?${searchParams.toString()}`,
 		});
-		const resultDomains = envelope.data?.domains ?? [];
+		const data = readDataObject(this.getNode(), envelope, 'capability');
+		const resultDomains = readArrayField(this.getNode(), data, 'domains', 'capability');
 		return resultDomains.map((domain) => ({
 			json: domain,
 			pairedItem: {
@@ -281,7 +354,8 @@ export class AnySearch implements INodeType {
 					method: 'GET',
 					url: `${API_BASE_URL}/v1/domains`,
 				});
-				const domains = envelope.data?.domains ?? [];
+				const data = readDataObject(this.getNode(), envelope, 'capability');
+				const domains = readArrayField(this.getNode(), data, 'domains', 'capability');
 				return domains.map((domain) => ({
 					value: String(domain.domain ?? ''),
 					name: `${String(domain.domain ?? '')} — ${String(domain.description ?? '')}`,

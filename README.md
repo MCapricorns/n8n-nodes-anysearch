@@ -36,6 +36,10 @@ The `AnySearch API` credential holds a single API key. It is **optional** — wi
 use anonymous access (rate-limited per IP against a daily free quota). With a key, requests draw
 from that key's quota and get higher concurrency limits.
 
+The key may be left blank, and a blank key is sent anonymously without an `Authorization` header.
+A credential that is selected but cannot be read or decrypted is reported as a configuration error
+instead of silently switching the node to anonymous access.
+
 To register a key with a test email:
 
 ```bash
@@ -47,6 +51,15 @@ curl -s -X POST "https://api.anysearch.com/v1/auth/email/register" \
 The response contains an `api_key` value starting with `as_sk_`. Paste it into the credential's
 **API Key** field. The credential's connection test calls `GET /v1/domains`, which does not
 consume search quota.
+
+## Error handling
+
+- HTTP failures, timeouts, quota errors (HTTP 402) and non-zero business `code` values fail the
+  node; they are never turned into "no results".
+- A successful envelope must contain `data` with the documented array (`results` for search,
+  `domains` for capability). A malformed 200 response is reported as a protocol error, while a
+  valid empty array is returned as an empty result set.
+- With **Continue On Fail**, the error message is emitted as the item's `error` field.
 
 ## Installation
 
@@ -84,6 +97,7 @@ Restart n8n and the **AnySearch** node appears in the node panel.
 npm install          # install dev dependencies
 npm run build        # compile to dist/
 npm run lint         # lint with the n8n node config
+npm test             # build, then run the offline contract tests
 npm run dev          # run a local n8n instance with the node loaded
 ANYSEARCH_API_KEY=as_sk_xxx node scripts/smoke.mjs   # live smoke test against the real API
 ```
