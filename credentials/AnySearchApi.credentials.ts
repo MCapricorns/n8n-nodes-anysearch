@@ -1,5 +1,6 @@
 import type {
-	IAuthenticateGeneric,
+	ICredentialDataDecryptedObject,
+	IHttpRequestOptions,
 	Icon,
 	ICredentialTestRequest,
 	ICredentialType,
@@ -24,20 +25,27 @@ export class AnySearchApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			required: true,
 			description:
-				'AnySearch API key (starts with as_sk_). Register one via POST /v1/auth/email/register or at https://www.anysearch.com',
+				'AnySearch API key (starts with as_sk_). Register one via POST /v1/auth/email/register or at https://www.anysearch.com. Leave the key blank to use anonymous access.',
 		},
 	];
 
-	authenticate: IAuthenticateGeneric = {
-		type: 'generic',
-		properties: {
+	async authenticate(
+		credentials: ICredentialDataDecryptedObject,
+		requestOptions: IHttpRequestOptions,
+	): Promise<IHttpRequestOptions> {
+		const apiKey = typeof credentials.apiKey === 'string' ? credentials.apiKey.trim() : '';
+		if (apiKey === '') {
+			return requestOptions;
+		}
+		return {
+			...requestOptions,
 			headers: {
-				Authorization: '=Bearer {{$credentials?.apiKey}}',
+				...requestOptions.headers,
+				Authorization: `Bearer ${apiKey}`,
 			},
-		},
-	};
+		};
+	}
 
 	// Does not consume search quota, so it is a safe connectivity check.
 	test: ICredentialTestRequest = {

@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-anysearch",
-	"version": "0.1.4",
+	"version": "1.0.0",
 	"description": "n8n community nodes for AnySearch: unified web search, vertical capability search, and URL content extraction",
 	"license": "MIT",
 	"homepage": "https://github.com/MCapricorns/n8n-nodes-anysearch#readme",
@@ -24,11 +24,13 @@
 		"dev": "n8n-node dev",
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
+		"test": "n8n-node build && node --test test/*.test.mjs",
 		"release": "n8n-node release",
 		"prepublishOnly": "n8n-node prerelease"
 	},
 	"files": [
 		"dist",
+		"!dist/bug",
 		"!dist/tsconfig.tsbuildinfo"
 	],
 	"publishConfig": {

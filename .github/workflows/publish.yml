@@ -48,6 +48,7 @@
 name: Publish
 
 on:
+  workflow_dispatch:
   push:
     tags:
       # Matches 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
@@ -75,6 +76,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run regression tests
+        run: npm test
 
       - name: Release
         # Publishes to npm with a provenance attestation (requires id-token: write above).
