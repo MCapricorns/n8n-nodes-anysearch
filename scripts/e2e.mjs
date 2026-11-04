@@ -309,23 +309,6 @@ add(
 		assert([400, 422].includes(items[0].json.details.http_status));
 	},
 );
-add(
-	'Search Feedback',
-	{
-		resource: 'feedback',
-		operation: 'score',
-		feedbacks: `={{ [{ request_id: $json.request_id, score: $json.results.some(r => /Paris/i.test((r.title || '') + ' ' + (r.snippet || '') + ' ' + (r.content || ''))) ? 5 : 1 }] }}`,
-	},
-	'valid',
-	(items) => {
-		assert(items[0].json.acknowledgement);
-		assert(!items[0].json.error);
-	},
-);
-connections.Start.main[0].pop();
-connections['Authenticated Search'] = {
-	main: [[{ node: 'Search Feedback', type: 'main', index: 0 }]],
-};
 if (process.env.ANYSEARCH_E2E_CASES) {
 	const cases = JSON.parse(await fs.readFile(process.env.ANYSEARCH_E2E_CASES, 'utf8'));
 	for (const entry of cases)

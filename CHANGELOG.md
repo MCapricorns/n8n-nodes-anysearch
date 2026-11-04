@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.1 (2026-11-04)
+
+- Remove Feedback > Submit Score and the embedded MCP client to comply with n8n community node verification requirements; all remaining operations use the AnySearch REST API.
+- Remove feedback from the live workflow runner and add regression coverage ensuring saved Feedback steps cannot send requests.
+- Document migration to n8n's built-in MCP Client Tool for MCP-only operations.
+- Stop tracking the docs directory and remove the README link to it.
+
 ## 1.1.0 (2026-11-04)
 
 - Add parallel Batch Search and MCP score feedback with validated input and partial-failure output.

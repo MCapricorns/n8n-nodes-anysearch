@@ -485,110 +485,6 @@ async function capabilityOperation(
 	}));
 }
 
-async function scoreOperation(
-	this: IExecuteFunctions,
-	itemIndex: number,
-): Promise<INodeExecutionData[]> {
-	let feedbacks: unknown = this.getNodeParameter('feedbacks', itemIndex);
-	if (typeof feedbacks === 'string') {
-		try {
-			feedbacks = JSON.parse(feedbacks);
-		} catch {
-			throw new NodeOperationError(this.getNode(), 'Feedback must be valid JSON');
-		}
-	}
-	if (
-		!Array.isArray(feedbacks) ||
-		feedbacks.length < 1 ||
-		feedbacks.length > 10 ||
-		feedbacks.some((entry) => {
-			const value = objectValue(entry);
-			return (
-				!value ||
-				typeof value.request_id !== 'string' ||
-				value.request_id.trim() === '' ||
-				value.request_id.length > 64 ||
-				typeof value.score !== 'number' ||
-				!Number.isInteger(value.score) ||
-				value.score < 1 ||
-				value.score > 5 ||
-				Object.keys(value).some((key) => key !== 'request_id' && key !== 'score')
-			);
-		})
-	) {
-		throw new NodeOperationError(
-			this.getNode(),
-			'Feedback must contain 1–10 objects with request_id (1–64 characters) and an integer score from 1 to 5',
-		);
-	}
-	const response = await anySearchHttpRequest.call(this, {
-		method: 'POST',
-		url: API_BASE_URL + '/mcp',
-		headers: { accept: 'application/json, text/event-stream' },
-		body: {
-			jsonrpc: '2.0',
-			id: 1,
-			method: 'tools/call',
-			params: { name: 'score', arguments: { feedbacks } },
-		},
-	});
-	let body = objectValue(response.body);
-	if (typeof response.body === 'string') {
-		try {
-			const frame = response.body
-				.split(/\r?\n\r?\n/)
-				.map((event) =>
-					event
-						.split(/\r?\n/)
-						.filter((line) => line.startsWith('data:'))
-						.map((line) => line.slice(5).trim())
-						.join('\n'),
-				)
-				.filter(Boolean)
-				.map((data) => objectValue(JSON.parse(data)))
-				.find((data) => data?.id === 1);
-			body = frame ?? objectValue(JSON.parse(response.body));
-		} catch {
-			throw apiError(
-				this.getNode(),
-				'AnySearch returned an invalid MCP response.',
-				response.requestId,
-			);
-		}
-	}
-	if (body?.jsonrpc !== '2.0' || body.id !== 1 || body.error) {
-		throw apiError(
-			this.getNode(),
-			'AnySearch feedback request was rejected or returned an invalid JSON-RPC response.',
-			response.requestId,
-		);
-	}
-	const result = objectValue(body.result);
-	if (
-		!result ||
-		result.isError === true ||
-		!Array.isArray(result.content) ||
-		result.content.length === 0 ||
-		result.content.some((entry) => {
-			const content = objectValue(entry);
-			return content?.type !== 'text' || typeof content.text !== 'string';
-		})
-	) {
-		throw apiError(this.getNode(), 'AnySearch did not accept the feedback.', response.requestId);
-	}
-	return [
-		{
-			json: {
-				feedbacks: feedbacks as IDataObject[],
-				acknowledgement: result.content
-					.map((entry) => safeMessage((entry as IDataObject).text))
-					.join('\n'),
-			},
-			pairedItem: { item: itemIndex },
-		},
-	];
-}
-
 export class AnySearch implements INodeType {
 	methods = {
 		loadOptions: {
@@ -659,11 +555,6 @@ export class AnySearch implements INodeType {
 						name: 'Extract',
 						value: 'extract',
 						description: 'Extract clean content from a public URL',
-					},
-					{
-						name: 'Feedback',
-						value: 'feedback',
-						description: 'Rate previously reviewed search results',
 					},
 					{
 						name: 'Capability',
@@ -886,32 +777,6 @@ export class AnySearch implements INodeType {
 				default: 'getDomains',
 			},
 			{
-				displayName: 'Operation',
-				name: 'operation',
-				type: 'options',
-				noDataExpression: true,
-				displayOptions: { show: { resource: ['feedback'] } },
-				options: [
-					{
-						name: 'Submit Score',
-						value: 'score',
-						description: 'Submit ratings for reviewed search results',
-						action: 'Submit search feedback',
-					},
-				],
-				default: 'score',
-			},
-			{
-				displayName: 'Feedback',
-				name: 'feedbacks',
-				type: 'json',
-				required: true,
-				default: '[]',
-				displayOptions: { show: { resource: ['feedback'], operation: ['score'] } },
-				description:
-					'JSON array of 1–10 objects with request_id and score (1–5). Rate results after reviewing them: 1 means unusable, 5 means fully answered. Acknowledgement confirms queuing, not persistence.',
-			},
-			{
 				displayName: 'Domain Names or IDs',
 				name: 'domains',
 				type: 'multiOptions',
@@ -945,8 +810,6 @@ export class AnySearch implements INodeType {
 					returnData.push(...(await batchSearchOperation.call(this, itemIndex)));
 				} else if (resource === 'search' && operation === 'search') {
 					returnData.push(...(await searchOperation.call(this, itemIndex)));
-				} else if (resource === 'feedback' && operation === 'score') {
-					returnData.push(...(await scoreOperation.call(this, itemIndex)));
 				} else if (resource === 'extract' && operation === 'extract') {
 					returnData.push(...(await extractOperation.call(this, itemIndex)));
 				} else if (resource === 'capability') {

@@ -603,71 +603,37 @@ test('multiple n8n inputs retain pairing, including failures', async () => {
 	assert(r.output[0][1].json.error);
 });
 
-for (const transport of ['json', 'sse']) {
-	test('feedback accepts the MCP ' + transport + ' acknowledgement', async () => {
-		const body = {
-			jsonrpc: '2.0',
-			id: 1,
-			result: { content: [{ type: 'text', text: 'Feedback queued' }] },
-		};
-		const r = await runCase({
-			parameters: {
-				resource: 'feedback',
-				operation: 'score',
-				feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
-			},
-			response:
-				transport === 'json' ? body : 'event: message\ndata: ' + JSON.stringify(body) + '\n\n',
-		});
-		assert.equal(r.outcome, 'returned', r.message);
-		assert.equal(r.requests[0].url, 'https://api.anysearch.com/mcp');
-		assert.deepEqual(r.requests[0].body.params.arguments, {
-			feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
-		});
-		assert.equal(r.output[0][0].json.acknowledgement, 'Feedback queued');
-	});
-}
+test('Feedback is not available in the resource picker or operation properties', () => {
+	const { properties } = new AnySearch().description;
+	const resource = properties.find((property) => property.name === 'resource');
+	assert(!resource.options.some((option) => option.value === 'feedback'));
+	assert(
+		!properties.some((property) => property.displayOptions?.show?.resource?.includes('feedback')),
+	);
+});
 
-for (const feedbacks of [
-	[],
-	[{ request_id: '', score: 3 }],
-	[{ request_id: 'id', score: 0 }],
-	[{ request_id: 'id', score: 6 }],
-	[{ request_id: 'id', score: 1.5 }],
-	Array(11).fill({ request_id: 'id', score: 3 }),
-]) {
-	test('feedback validates its schema: ' + JSON.stringify(feedbacks), async () => {
-		const r = await runCase({
-			parameters: { resource: 'feedback', operation: 'score', feedbacks },
-		});
-		assert.equal(r.outcome, 'error');
-		assert.equal(r.requests.length, 0);
-	});
-}
-
-for (const response of [
-	{ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'api_key=SYNTHETIC_KEY' } },
-	{
-		jsonrpc: '2.0',
-		id: 1,
-		result: { isError: true, content: [{ type: 'text', text: 'password=SYNTHETIC_PASSWORD' }] },
-	},
-	{},
-	'not JSON',
-]) {
+for (const continueOnFail of [false, true]) {
 	test(
-		'feedback rejects MCP errors without exposing messages: ' + JSON.stringify(response),
+		'saved Feedback steps fail without sending a request (continueOnFail=' + continueOnFail + ')',
 		async () => {
 			const r = await runCase({
 				parameters: {
 					resource: 'feedback',
 					operation: 'score',
-					feedbacks: [{ request_id: 'id', score: 4 }],
+					feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
 				},
-				response,
+				continueOnFail,
 			});
-			assert.equal(r.outcome, 'error');
-			assert(!r.serialized.includes('SYNTHETIC'));
+			assert.equal(r.requests.length, 0);
+			if (continueOnFail) {
+				assert.equal(r.outcome, 'returned');
+				assert.match(r.output[0][0].json.error, /Unknown resource: feedback/);
+				assert.deepEqual(r.output[0][0].pairedItem, { item: 0 });
+			} else {
+				assert.equal(r.outcome, 'error');
+				assert.match(r.message, /Unknown resource: feedback/);
+				assert.equal(r.context.itemIndex, 0);
+			}
 		},
 	);
 }

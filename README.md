@@ -1,8 +1,8 @@
 # n8n-nodes-anysearch
 
 [n8n](https://n8n.io) community nodes for [AnySearch](https://www.anysearch.com): general and
-vertical search, parallel batch search, capability discovery, public URL extraction, and
-search feedback. The node can also connect to an AI Agent as a tool.
+vertical search, parallel batch search, capability discovery, and public URL extraction.
+The node can also connect to an AI Agent as a tool.
 
 ## Operations
 
@@ -13,7 +13,6 @@ search feedback. The node can also connect to an AI Agent as a tool.
 | Extract | Extract Content | POST /v1/extract | URL, title, content, and request_id |
 | Capability | List All Domains | GET /v1/domains | One item per domain |
 | Capability | Get Sub-Domains | GET /v1/sub-domains | Tags and parameter definitions for the selected domains |
-| Feedback | Submit Score | MCP tools/call: score | Feedback queue acknowledgement |
 
 The package has no bundled runtime dependencies. n8n supplies the n8n-workflow peer dependency.
 The integration is tested with n8n 2.44.7 on Node.js 24.22.1; compatibility with every older n8n
@@ -134,19 +133,12 @@ node preserves the returned text, so extracted JSON is not guaranteed to parse. 
 separate service-provided completeness flag. See the
 [current Extract contract](https://www.anysearch.com/docs/api-endpoints/v1-extract).
 
-## Search feedback
+## Migrating from 1.1.0
 
-Choose **Feedback > Submit Score** and provide 1–10 objects with request_id and an integer
-score from 1 to 5. Review the search results before scoring: 1 means unusable, 5 means fully
-answered. Use a request ID from a preceding search output.
-
-~~~json
-[{"request_id":"7d6f4e91-2a83-4c5b-9f10-6e8a3d27b541","score":4}]
-~~~
-
-Feedback calls the live MCP score tool on the same AnySearch service. An acknowledgement
-means the feedback was queued; it does not prove persistence. No score is submitted
-automatically by the node.
+Version 1.1.1 removes **Feedback > Submit Score** and its MCP client. This community node
+uses only the AnySearch REST API. Existing Feedback steps will fail without sending a request;
+replace them with n8n's built-in **MCP Client Tool** node if you need AnySearch's MCP score tool.
+Search, Batch Search, Extract, and Capability operations continue to use REST.
 
 ## Errors and privacy
 
@@ -198,7 +190,7 @@ npm run test:e2e
 
 For the broader catalog/source matrix, also set ANYSEARCH_E2E_CASES to the absolute path of
 test/e2e/search-cases.json. Refresh the catalog and review the cases before running against a
-changed API. Live tests consume quota and submit feedback for their own factual search.
+changed API. Live tests consume quota.
 
 The runner imports encrypted test credentials into a new isolated n8n instance, executes real
 workflows, checks outgoing header presence and response diagnostics, and removes the instance
@@ -206,7 +198,6 @@ afterward. Its AI Agent test uses a deterministic local chat model with the real
 no external LLM credential is needed. Evidence contains test parameters, request IDs, counts,
 hashes, and result hosts, not the API key or full search bodies.
 
-See [API coverage](docs/api-coverage.md) for the API/SDK mapping, scope, and validation evidence.
 The optional node scripts/smoke.mjs check uses a lightweight execution context and is not an
 n8n end-to-end certification.
 
