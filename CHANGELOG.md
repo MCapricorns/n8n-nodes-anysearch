@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.1.0 (2026-11-04)
 
 - Add parallel Batch Search and MCP score feedback with validated input and partial-failure output.
 - Preserve request IDs and HTTP status while removing raw upstream error messages and credential-bearing bodies.
