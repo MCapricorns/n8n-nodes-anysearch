@@ -25,6 +25,7 @@
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
 		"test": "n8n-node build && node --test test/*.test.mjs",
+		"test:e2e": "node scripts/e2e.mjs",
 		"release": "n8n-node release",
 		"prepublishOnly": "n8n-node prerelease"
 	},
@@ -47,10 +48,10 @@
 		]
 	},
 	"devDependencies": {
-		"@n8n/node-cli": "*",
+		"@n8n/node-cli": "0.55.5",
 		"eslint": "9.39.4",
 		"prettier": "3.8.3",
-		"release-it": "20.2.0",
+		"release-it": "21.1.2",
 		"typescript": "5.9.3"
 	},
 	"peerDependencies": {

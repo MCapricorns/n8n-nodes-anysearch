@@ -47,6 +47,8 @@ async function rawRequest(options) {
 		method: options.method,
 		headers,
 		body: options.body === undefined ? undefined : JSON.stringify(options.body),
+		signal: AbortSignal.timeout(options.timeout ?? 60000),
+		redirect: 'error',
 	});
 	const text = await response.text();
 	let json;
@@ -55,12 +57,7 @@ async function rawRequest(options) {
 	} catch {
 		json = { raw: text };
 	}
-	if (!response.ok) {
-		const error = new Error(`HTTP ${response.status}: ${JSON.stringify(json).slice(0, 500)}`);
-		error.httpCode = response.status;
-		throw error;
-	}
-	return json;
+	return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: json };
 }
 
 function makeContext(node, parameters) {
@@ -89,11 +86,16 @@ function makeContext(node, parameters) {
 
 async function run(label, parameters, verify) {
 	requests = [];
-	const context = makeContext({
-		id: 'smoke',
-		name: 'AnySearch',
-		...(apiKey ? { credentials: { anySearchApi: { id: 'smoke', name: 'Smoke credential' } } } : {}),
-	}, parameters);
+	const context = makeContext(
+		{
+			id: 'smoke',
+			name: 'AnySearch',
+			...(apiKey
+				? { credentials: { anySearchApi: { id: 'smoke', name: 'Smoke credential' } } }
+				: {}),
+		},
+		parameters,
+	);
 	try {
 		const output = await AnySearch.prototype.execute.call(context);
 		assert(Array.isArray(output), 'execute must return [items]');
@@ -115,7 +117,10 @@ function verifySearchBody({ requests: sent }, expected) {
 		String(sent[0].url).startsWith(`${API_BASE_URL}/v1/search`),
 		`unexpected search URL ${sent[0].url}`,
 	);
-	assert(sent[0].body?.query === expected.query, `query not mapped: ${JSON.stringify(sent[0].body)}`);
+	assert(
+		sent[0].body?.query === expected.query,
+		`query not mapped: ${JSON.stringify(sent[0].body)}`,
+	);
 	assert(
 		sent[0].body?.max_results === expected.maxResults,
 		`max_results not mapped: ${JSON.stringify(sent[0].body)}`,
@@ -129,7 +134,12 @@ console.log(`AnySearch node smoke test (${apiKey ? 'authenticated' : 'anonymous'
 
 await run(
 	'search (simplified)',
-	{ resource: 'search', operation: 'search', query: 'n8n community node tutorial', options: { maxResults: 3 } },
+	{
+		resource: 'search',
+		operation: 'search',
+		query: 'n8n community node tutorial',
+		options: { maxResults: 3 },
+	},
 	({ items, requests: sent }) => {
 		verifySearchBody({ requests: sent }, { query: 'n8n community node tutorial', maxResults: 3 });
 		assert(items.length <= 3, `simplified output must honour maxResults=3, got ${items.length}`);
@@ -139,7 +149,12 @@ await run(
 
 await run(
 	'search (full envelope)',
-	{ resource: 'search', operation: 'search', query: 'typescript generics guide', options: { maxResults: 2, simplify: false } },
+	{
+		resource: 'search',
+		operation: 'search',
+		query: 'typescript generics guide',
+		options: { maxResults: 2, simplify: false },
+	},
 	({ items, requests: sent }) => {
 		verifySearchBody({ requests: sent }, { query: 'typescript generics guide', maxResults: 2 });
 		assert(items.length === 1, `unsimplified output must be a single item, got ${items.length}`);
@@ -157,9 +172,17 @@ await run(
 
 await run(
 	'search (vertical tag)',
-	{ resource: 'search', operation: 'search', query: 'http client retry', options: { maxResults: 3, tag: 'code.snippet' } },
+	{
+		resource: 'search',
+		operation: 'search',
+		query: 'http client retry',
+		options: { maxResults: 3, tag: 'code.snippet' },
+	},
 	({ items, requests: sent }) => {
-		verifySearchBody({ requests: sent }, { query: 'http client retry', maxResults: 3, tag: 'code.snippet' });
+		verifySearchBody(
+			{ requests: sent },
+			{ query: 'http client retry', maxResults: 3, tag: 'code.snippet' },
+		);
 		assert(items.length <= 3, `vertical output must honour maxResults=3, got ${items.length}`);
 		for (const item of items) assertHttpUrl(item.json.url, 'result url');
 	},
@@ -185,7 +208,10 @@ await run(
 	'capability: list domains',
 	{ resource: 'capability', operation: 'getDomains' },
 	({ items, requests: sent }) => {
-		assert(sent.length === 1 && sent[0].method === 'GET', 'domain listing must issue one GET request');
+		assert(
+			sent.length === 1 && sent[0].method === 'GET',
+			'domain listing must issue one GET request',
+		);
 		assert(items.length > 0, 'domain listing must return at least one domain');
 		for (const item of items) {
 			assert(
@@ -200,7 +226,10 @@ await run(
 	'capability: sub-domains',
 	{ resource: 'capability', operation: 'getSubDomains', domains: ['code', 'finance'] },
 	({ items, requests: sent }) => {
-		assert(sent.length === 1 && sent[0].method === 'GET', 'sub-domain listing must issue one GET request');
+		assert(
+			sent.length === 1 && sent[0].method === 'GET',
+			'sub-domain listing must issue one GET request',
+		);
 		assert(
 			String(sent[0].url).includes('domain=code') && String(sent[0].url).includes('domain=finance'),
 			`sub-domain request must repeat the domain parameter, got ${sent[0].url}`,

@@ -26,14 +26,30 @@ const node = {
 const success = {
 	code: 0,
 	request_id: 'fixture-request-id',
-	data: { results: [{ title: 'Fixture title', url: 'https://example.com/fixture', content: 'Fixture content' }] },
+	data: {
+		results: [
+			{ title: 'Fixture title', url: 'https://example.com/fixture', content: 'Fixture content' },
+		],
+	},
 };
 
-function scenario({ response = success, parameters = {}, credentialData, credentialError, continueOnFail = false } = {}) {
+function scenario({
+	response = success,
+	statusCode = 200,
+	headers = {},
+	parameters = {},
+	credentialData,
+	credentialError,
+	continueOnFail = false,
+	inputItems = [{ json: {} }],
+} = {}) {
 	const requests = [];
 	const hasCredential = credentialData !== undefined || credentialError !== undefined;
 	const configured = hasCredential
-		? { ...node, credentials: { anySearchApi: { id: 'offline-credential', name: 'Offline fixture' } } }
+		? {
+				...node,
+				credentials: { anySearchApi: { id: 'offline-credential', name: 'Offline fixture' } },
+			}
 		: { ...node };
 	const resolved = {
 		resource: 'search',
@@ -44,12 +60,14 @@ function scenario({ response = success, parameters = {}, credentialData, credent
 	};
 	const send = async (route, options) => {
 		requests.push({ route, ...options });
-		if (response instanceof Error) throw response;
-		return response;
+		const body =
+			typeof response === 'function' ? await response(options, requests.length - 1) : response;
+		if (body instanceof Error) throw body;
+		return { statusCode, headers, body };
 	};
 	const context = {
 		getNode: () => configured,
-		getInputData: () => [{ json: {} }],
+		getInputData: () => inputItems,
 		getNodeParameter: (name, _itemIndex, fallback) =>
 			Object.hasOwn(resolved, name) ? resolved[name] : fallback,
 		getCredentials: async () => {
@@ -72,7 +90,13 @@ async function runCase(configured) {
 		const output = await s.execute();
 		return { outcome: 'returned', output, requests: s.requests };
 	} catch (error) {
-		return { outcome: 'error', message: error.message, requests: s.requests };
+		return {
+			outcome: 'error',
+			message: error.message,
+			context: error.context,
+			serialized: JSON.stringify(error),
+			requests: s.requests,
+		};
 	}
 }
 
@@ -85,7 +109,12 @@ test('search maps query and max_results and returns one item per result', async 
 	assert.equal(r.requests[0].url, 'https://api.anysearch.com/v1/search');
 	assert.deepEqual(r.requests[0].body, { query: 'offline fixture query', max_results: 2 });
 	assert.deepEqual(r.output, [
-		[{ json: success.data.results[0], pairedItem: { item: 0 } }],
+		[
+			{
+				json: { ...success.data.results[0], request_id: success.request_id },
+				pairedItem: { item: 0 },
+			},
+		],
 	]);
 });
 
@@ -127,8 +156,15 @@ test('search rejects an empty query before any request', async () => {
 });
 
 test('unsimplified search keeps request_id, results and metadata', async () => {
-	const response = { code: 0, request_id: 'fixture-request-id', data: { results: [], metadata: { pages: 1 } } };
-	const r = await runCase({ response, parameters: { options: { maxResults: 2, simplify: false } } });
+	const response = {
+		code: 0,
+		request_id: 'fixture-request-id',
+		data: { results: [], metadata: { pages: 1 } },
+	};
+	const r = await runCase({
+		response,
+		parameters: { options: { maxResults: 2, simplify: false } },
+	});
 	assert.equal(r.outcome, 'returned');
 	assert.deepEqual(r.output, [
 		[
@@ -163,10 +199,34 @@ test('a success envelope without data.results is an error, not an empty result',
 	assert.match(r.message, /data\.results/);
 });
 
-test('a non-zero business code is an error and keeps the upstream message', async () => {
+test('a non-zero business code is an error without echoing the upstream message', async () => {
 	const r = await runCase({ response: { code: 40001, message: 'Offline invalid input fixture' } });
 	assert.equal(r.outcome, 'error');
-	assert.match(r.message, /Offline invalid input fixture/);
+	assert.match(r.message, /40001/);
+	assert(!r.message.includes('Offline invalid input fixture'));
+});
+
+test('continued failures use the n8n error-output schema without losing diagnostics', async () => {
+	const r = await runCase({ statusCode: 429, continueOnFail: true });
+	const item = r.output[0][0];
+	assert.deepEqual(Object.keys(item.json).sort(), ['details', 'error']);
+	assert.equal(item.error, undefined);
+	assert.equal(item.json.details.request_id, success.request_id);
+	assert.equal(item.json.details.http_status, 429);
+	assert.deepEqual(item.pairedItem, { item: 0 });
+});
+
+test('natural-language business errors cannot disclose generated credentials', async () => {
+	const r = await runCase({
+		continueOnFail: true,
+		response: {
+			code: -1,
+			message: 'Your new password is PRIVATE_UPSTREAM_PASSWORD',
+			request_id: 'business-id',
+		},
+	});
+	assert(!JSON.stringify(r.output).includes('PRIVATE_UPSTREAM_PASSWORD'));
+	assert.equal(r.output[0][0].json.details.request_id, 'business-id');
 });
 
 test('Codex metadata identifies the registered node and excludes the rejected AI category', () => {
@@ -177,14 +237,21 @@ test('Codex metadata identifies the registered node and excludes the rejected AI
 });
 
 test('extract returns url, title and content', async () => {
-	const response = { code: 0, data: { url: 'https://example.com/page', title: 'Title', content: 'Body' } };
+	const response = {
+		code: 0,
+		data: { url: 'https://example.com/page', title: 'Title', content: 'Body' },
+	};
 	const r = await runCase({
 		response,
 		parameters: { resource: 'extract', operation: 'extract', url: 'https://example.com/page' },
 	});
 	assert.equal(r.outcome, 'returned');
 	assert.deepEqual(r.requests[0].body, { url: 'https://example.com/page' });
-	assert.deepEqual(r.output[0][0].json, { url: 'https://example.com/page', title: 'Title', content: 'Body' });
+	assert.deepEqual(r.output[0][0].json, {
+		url: 'https://example.com/page',
+		title: 'Title',
+		content: 'Body',
+	});
 });
 
 test('extract rejects a response without extracted content', async () => {
@@ -206,7 +273,10 @@ test('extract rejects a malformed URL before any request', async () => {
 
 test('domain listing returns one item per domain', async () => {
 	const response = { code: 0, data: { domains: [{ domain: 'code', description: 'Code' }] } };
-	const r = await runCase({ response, parameters: { resource: 'capability', operation: 'getDomains' } });
+	const r = await runCase({
+		response,
+		parameters: { resource: 'capability', operation: 'getDomains' },
+	});
 	assert.equal(r.outcome, 'returned');
 	assert.equal(r.requests[0].method, 'GET');
 	assert.deepEqual(r.output[0][0].json, { domain: 'code', description: 'Code' });
@@ -222,13 +292,23 @@ test('domain listing without data.domains is an error', async () => {
 });
 
 test('sub-domain listing repeats the domain query parameter', async () => {
-	const response = { code: 0, data: { domains: [{ domain: 'code.code' }] } };
+	const response = {
+		code: 0,
+		data: { domains: [{ domain: 'code', sub_domains: [{ sub_domain: 'code.doc' }] }] },
+	};
 	const r = await runCase({
 		response,
-		parameters: { resource: 'capability', operation: 'getSubDomains', domains: ['code', 'finance'] },
+		parameters: {
+			resource: 'capability',
+			operation: 'getSubDomains',
+			domains: ['code', 'finance'],
+		},
 	});
 	assert.equal(r.outcome, 'returned');
-	assert.equal(r.requests[0].url, 'https://api.anysearch.com/v1/sub-domains?domain=code&domain=finance');
+	assert.equal(
+		r.requests[0].url,
+		'https://api.anysearch.com/v1/sub-domains?domain=code&domain=finance',
+	);
 });
 
 test('an unselected credential uses the anonymous helper without Authorization', async () => {
@@ -265,7 +345,9 @@ test('the API key field may be left blank', () => {
 
 for (const status of [401, 402, 429]) {
 	test(`HTTP ${status} stays an error and does not fall back to anonymous`, async () => {
-		const error = Object.assign(new Error(`Offline HTTP ${status} fixture`), { statusCode: status });
+		const error = Object.assign(new Error(`Offline HTTP ${status} fixture`), {
+			statusCode: status,
+		});
 		const r = await runCase({ response: error, credentialData: { apiKey: 'synthetic_fixture' } });
 		assert.equal(r.outcome, 'error');
 		assert.equal(r.requests.length, 1);
@@ -317,43 +399,319 @@ test('the smoke script fails when every response is malformed', () => {
 });
 
 for (const code of [undefined, null, '0', '40001', NaN, Infinity]) {
- test('search rejects invalid business code: ' + String(code), async () => {
-  const r = await runCase({ response: { code, data: { results: [] } } });
-  assert.equal(r.outcome, 'error');
-  assert.match(r.message, /invalid code/);
- });
+	test('search rejects invalid business code: ' + String(code), async () => {
+		const r = await runCase({ response: { code, data: { results: [] } } });
+		assert.equal(r.outcome, 'error');
+		assert.match(r.message, /invalid code/);
+	});
 }
 
 for (const results of [null, {}, '', [null], ['invalid'], [[]]]) {
- test('search rejects malformed results: ' + JSON.stringify(results), async () => {
-  for (const simplify of [true, false]) {
-   const r = await runCase({ response: { code: 0, data: { results } }, parameters: { options: { simplify } } });
-   assert.equal(r.outcome, 'error');
-   assert.match(r.message, /data\.results/);
-  }
- });
+	test('search rejects malformed results: ' + JSON.stringify(results), async () => {
+		for (const simplify of [true, false]) {
+			const r = await runCase({
+				response: { code: 0, data: { results } },
+				parameters: { options: { simplify } },
+			});
+			assert.equal(r.outcome, 'error');
+			assert.match(r.message, /data\.results/);
+		}
+	});
 }
 
 for (const apiKey of ['', '   ', 'synthetic_fixture', ' synthetic_fixture ']) {
- test('credential authentication handles key: ' + JSON.stringify(apiKey), async () => {
-  const input = { method: 'GET', url: 'https://api.anysearch.com/v1/domains', headers: { accept: 'application/json' } };
-  const output = await new AnySearchApi().authenticate({ apiKey }, input);
-  assert.equal(output.headers.Authorization, apiKey.trim() ? 'Bearer synthetic_fixture' : undefined);
-  assert.equal(Object.hasOwn(output.headers, 'Authorization'), Boolean(apiKey.trim()));
-  assert.equal(output.headers.accept, 'application/json');
- });
+	test('credential authentication handles key: ' + JSON.stringify(apiKey), async () => {
+		const input = {
+			method: 'GET',
+			url: 'https://api.anysearch.com/v1/domains',
+			headers: { accept: 'application/json' },
+		};
+		const output = await new AnySearchApi().authenticate({ apiKey }, input);
+		assert.equal(
+			output.headers.Authorization,
+			apiKey.trim() ? 'Bearer synthetic_fixture' : undefined,
+		);
+		assert.equal(Object.hasOwn(output.headers, 'Authorization'), Boolean(apiKey.trim()));
+		assert.equal(output.headers.accept, 'application/json');
+	});
 }
 
 test('continueOnFail emits an error item for malformed responses', async () => {
- const r = await runCase({ response: {}, continueOnFail: true });
- assert.equal(r.outcome, 'returned');
- assert.match(r.output[0][0].json.error, /unexpected response/);
- assert.deepEqual(r.output[0][0].pairedItem, { item: 0 });
+	const r = await runCase({ response: {}, continueOnFail: true });
+	assert.equal(r.outcome, 'returned');
+	assert.match(r.output[0][0].json.error, /unexpected response/);
+	assert.deepEqual(r.output[0][0].pairedItem, { item: 0 });
 });
 
 test('selected empty key uses anonymous helper without Authorization', async () => {
- const r = await runCase({ credentialData: { apiKey: '' } });
- assert.equal(r.outcome, 'returned');
- assert.equal(r.requests[0].route, 'anonymous');
- assert.equal(r.requests[0].headers?.Authorization, undefined);
+	const r = await runCase({ credentialData: { apiKey: '' } });
+	assert.equal(r.outcome, 'returned');
+	assert.equal(r.requests[0].route, 'anonymous');
+	assert.equal(r.requests[0].headers?.Authorization, undefined);
+});
+
+for (const content of [undefined, null, 123, {}]) {
+	test('extract rejects missing or invalid content: ' + String(content), async () => {
+		const r = await runCase({
+			response: {
+				code: 0,
+				request_id: 'extract-id',
+				data: { url: 'https://example.com', title: '', content },
+			},
+			parameters: { resource: 'extract', operation: 'extract', url: 'https://example.com' },
+		});
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.context.request_id, 'extract-id');
+	});
+}
+
+for (const results of [
+	[{}],
+	[{ title: 'Title', url: 12 }],
+	[{ title: 'Title', url: 'https://example.com', content: {} }],
+]) {
+	test('search rejects malformed result fields: ' + JSON.stringify(results), async () => {
+		const r = await runCase({ response: { code: 0, request_id: 'result-id', data: { results } } });
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.context.request_id, 'result-id');
+	});
+}
+
+for (const statusCode of [200, 400, 401, 402, 403, 422, 429, 500, 502]) {
+	for (const continueOnFail of [false, true]) {
+		test(
+			'sensitive upstream details stay private for HTTP ' +
+				statusCode +
+				', continue=' +
+				continueOnFail,
+			async () => {
+				const r = await runCase({
+					statusCode,
+					continueOnFail,
+					response: {
+						code: -1,
+						message: 'password=SYNTHETIC_PASSWORD api_key=SYNTHETIC_KEY',
+						request_id: 'private-response-id',
+					},
+				});
+				const observable = JSON.stringify({ output: r.output, serialized: r.serialized });
+				assert(!observable.includes('SYNTHETIC_PASSWORD'));
+				assert(!observable.includes('SYNTHETIC_KEY'));
+				assert(observable.includes('private-response-id'));
+				if (continueOnFail && statusCode !== 200)
+					assert.equal(r.output[0][0].json.details.http_status, statusCode);
+			},
+		);
+	}
+}
+
+for (const maxResults of [0, 11, 1.5, '2', null, NaN, Infinity]) {
+	test('invalid Max Results fails before HTTP: ' + String(maxResults), async () => {
+		const r = await runCase({ parameters: { options: { maxResults } } });
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.requests.length, 0);
+	});
+}
+
+test('requests use bounded timeouts and do not forward authentication across redirects', async () => {
+	const r = await runCase();
+	assert.equal(r.requests[0].timeout, 60000);
+	assert.equal(r.requests[0].disableFollowRedirect, true);
+	assert.equal(r.requests[0].returnFullResponse, true);
+	assert.equal(r.requests[0].headers['X-Anysearch-Client'], 'n8n-nodes-anysearch');
+});
+
+test('extract rejects embedded URL credentials before HTTP', async () => {
+	const r = await runCase({
+		parameters: {
+			resource: 'extract',
+			operation: 'extract',
+			url: 'https://user:synthetic@example.com',
+		},
+	});
+	assert.equal(r.outcome, 'error');
+	assert.equal(r.requests.length, 0);
+	assert(!r.serialized.includes('https://user'));
+});
+
+test('batch searches run concurrently, preserve order and isolate failures', async () => {
+	let active = 0,
+		peak = 0;
+	const r = await runCase({
+		parameters: {
+			operation: 'batchSearch',
+			queries: [
+				{ query: 'first', max_results: 1 },
+				{ query: 'second' },
+				{ query: 'third', params: { empty: '', optional: false } },
+			],
+		},
+		response: async (options) => {
+			active++;
+			peak = Math.max(peak, active);
+			await new Promise((resolve) => setTimeout(resolve, options.body.query === 'first' ? 20 : 2));
+			active--;
+			return options.body.query === 'second'
+				? { code: -1, message: 'Service unavailable', request_id: 'failed-id' }
+				: success;
+		},
+	});
+	assert.equal(peak, 3);
+	assert.deepEqual(
+		r.output[0].map((item) => item.json.query ?? item.json.details.query),
+		['first', 'second', 'third'],
+	);
+	assert.deepEqual(
+		r.output[0].map((item) => item.json.query_index ?? item.json.details.query_index),
+		[0, 1, 2],
+	);
+	assert(r.output[0][0].json.results.length);
+	assert.equal(r.output[0][1].json.details.request_id, 'failed-id');
+	assert(r.output[0][1].json.error);
+	assert(r.output[0][2].json.results.length);
+	assert.deepEqual(r.requests[2].body.params, { empty: '', optional: false });
+});
+
+for (const queries of [[], Array(6).fill({ query: 'test' }), null, '{}', 'broken']) {
+	test('batch rejects invalid collection: ' + JSON.stringify(queries), async () => {
+		const r = await runCase({ parameters: { operation: 'batchSearch', queries } });
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.requests.length, 0);
+	});
+}
+
+test('batch invalid query does not prevent valid siblings from executing', async () => {
+	const r = await runCase({
+		parameters: { operation: 'batchSearch', queries: [{ query: 'good' }, { query: '' }] },
+	});
+	assert.equal(r.requests.length, 1);
+	assert(r.output[0][0].json.results);
+	assert(r.output[0][1].json.error);
+});
+
+test('multiple n8n inputs retain pairing, including failures', async () => {
+	const r = await runCase({
+		inputItems: [{ json: {} }, { json: {} }, { json: {} }],
+		continueOnFail: true,
+		response: (_options, index) =>
+			index === 1 ? new Error('Synthetic transport failure') : success,
+	});
+	assert.deepEqual(
+		r.output[0].map((item) => item.pairedItem.item),
+		[0, 1, 2],
+	);
+	assert(r.output[0][1].json.error);
+});
+
+for (const transport of ['json', 'sse']) {
+	test('feedback accepts the MCP ' + transport + ' acknowledgement', async () => {
+		const body = {
+			jsonrpc: '2.0',
+			id: 1,
+			result: { content: [{ type: 'text', text: 'Feedback queued' }] },
+		};
+		const r = await runCase({
+			parameters: {
+				resource: 'feedback',
+				operation: 'score',
+				feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
+			},
+			response:
+				transport === 'json' ? body : 'event: message\ndata: ' + JSON.stringify(body) + '\n\n',
+		});
+		assert.equal(r.outcome, 'returned', r.message);
+		assert.equal(r.requests[0].url, 'https://api.anysearch.com/mcp');
+		assert.deepEqual(r.requests[0].body.params.arguments, {
+			feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
+		});
+		assert.equal(r.output[0][0].json.acknowledgement, 'Feedback queued');
+	});
+}
+
+for (const feedbacks of [
+	[],
+	[{ request_id: '', score: 3 }],
+	[{ request_id: 'id', score: 0 }],
+	[{ request_id: 'id', score: 6 }],
+	[{ request_id: 'id', score: 1.5 }],
+	Array(11).fill({ request_id: 'id', score: 3 }),
+]) {
+	test('feedback validates its schema: ' + JSON.stringify(feedbacks), async () => {
+		const r = await runCase({
+			parameters: { resource: 'feedback', operation: 'score', feedbacks },
+		});
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.requests.length, 0);
+	});
+}
+
+for (const response of [
+	{ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'api_key=SYNTHETIC_KEY' } },
+	{
+		jsonrpc: '2.0',
+		id: 1,
+		result: { isError: true, content: [{ type: 'text', text: 'password=SYNTHETIC_PASSWORD' }] },
+	},
+	{},
+	'not JSON',
+]) {
+	test(
+		'feedback rejects MCP errors without exposing messages: ' + JSON.stringify(response),
+		async () => {
+			const r = await runCase({
+				parameters: {
+					resource: 'feedback',
+					operation: 'score',
+					feedbacks: [{ request_id: 'id', score: 4 }],
+				},
+				response,
+			});
+			assert.equal(r.outcome, 'error');
+			assert(!r.serialized.includes('SYNTHETIC'));
+		},
+	);
+}
+
+const capabilityCatalog = localRequire('./test/fixtures/capabilities.json');
+for (const capability of capabilityCatalog.capabilities) {
+	test('catalog parameter forwarding and empty required fields: ' + capability.tag, async () => {
+		const all = Object.fromEntries(
+			capability.parameters.map((parameter) => [parameter.name, 'fixture-value']),
+		);
+		const required = Object.fromEntries(
+			capability.parameters
+				.filter((parameter) => parameter.required)
+				.map((parameter) => [parameter.name, '']),
+		);
+		for (const params of [all, required, {}]) {
+			const r = await runCase({ parameters: { options: { tag: capability.tag, params } } });
+			assert.equal(r.outcome, 'returned', r.message);
+			assert.deepEqual(r.requests[0].body.params, params);
+			assert.equal(r.requests[0].body.tag, capability.tag);
+		}
+	});
+}
+
+test('extract preserves Unicode and server truncation boundaries', async () => {
+	const content = '😀'.repeat(49999) + '文';
+	const r = await runCase({
+		parameters: { resource: 'extract', operation: 'extract', url: 'https://example.com' },
+		response: {
+			code: 0,
+			request_id: 'unicode-id',
+			data: { url: 'https://example.com', title: '', content },
+		},
+	});
+	assert.equal(r.outcome, 'returned');
+	assert.equal(r.output[0][0].json.content, content);
+	assert.equal(Array.from(r.output[0][0].json.content).length, 50000);
+});
+
+test('upstream credentials cannot be smuggled into request_id', async () => {
+	const r = await runCase({
+		statusCode: 402,
+		continueOnFail: true,
+		response: { code: -1, request_id: 'as_sk_synthetic_private_key' },
+	});
+	assert(!JSON.stringify(r.output).includes('as_sk_'));
 });

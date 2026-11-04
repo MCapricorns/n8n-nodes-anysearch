@@ -14,7 +14,7 @@ export class AnySearchApi implements ICredentialType {
 
 	documentationUrl = 'https://github.com/MCapricorns/n8n-nodes-anysearch#credentials';
 
-	icon: Icon = 'file:AnySearch.svg';
+	icon: Icon = { light: 'file:AnySearch.svg', dark: 'file:AnySearch.dark.svg' };
 
 	properties: INodeProperties[] = [
 		{
@@ -26,7 +26,7 @@ export class AnySearchApi implements ICredentialType {
 			},
 			default: '',
 			description:
-				'AnySearch API key (starts with as_sk_). Register one via POST /v1/auth/email/register or at https://www.anysearch.com. Leave the key blank to use anonymous access.',
+				'API key from https://www.anysearch.com/console/api-keys. Leave blank to use anonymous access.',
 		},
 	];
 

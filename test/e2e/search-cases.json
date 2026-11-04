@@ -1,0 +1,761 @@
+[
+  {
+    "query": "AlphaFold protein structure prediction",
+    "tag": "academic.citation",
+    "params": {
+      "id": "10.1038/s41586-021-03819-2",
+      "id_type": "doi",
+      "op": "metadata"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "climate data",
+    "tag": "academic.dataset",
+    "params": {
+      "client_id": "cern.zenodo",
+      "resource_type": "Dataset"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Attention Is All You Need",
+    "tag": "academic.paper",
+    "params": {
+      "year_from": "2017",
+      "year_to": "2018"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Geoffrey Hinton",
+    "tag": "academic.person",
+    "params": {
+      "name": "Geoffrey Hinton"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "World wheat production",
+    "tag": "agriculture.fao",
+    "params": {
+      "domain": "production",
+      "keyword": "wheat production",
+      "location": "World",
+      "date_start": "2023"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple Inc",
+    "tag": "business.company",
+    "params": {
+      "type": "GlobalLEI",
+      "keyword": "Apple Inc."
+    },
+    "max_results": 1
+  },
+  {
+    "query": "software engineer",
+    "tag": "business.jobs",
+    "params": {
+      "type": "RemoteJobs",
+      "keyword": "software engineer"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Microsoft engineering",
+    "tag": "business.people",
+    "params": {
+      "type": "PeopleSearch",
+      "keyword": "Microsoft",
+      "title": "CTO"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "China tea exports",
+    "tag": "business.trade",
+    "params": {
+      "type": "GlobalBilateralTrade",
+      "hs_code": "0902",
+      "location": "China",
+      "flow": "export",
+      "date_start": "2023"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "React useEffect cleanup",
+    "tag": "code.doc",
+    "params": {
+      "library": "react"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "useEffect",
+    "tag": "code.snippet",
+    "params": {
+      "lang": "TypeScript",
+      "repo": "facebook/react"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "France electricity generation",
+    "tag": "energy.electricity",
+    "params": {
+      "type": "GlobalElectricity",
+      "location": "France",
+      "metric": "generation"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "United States crude oil production",
+    "tag": "energy.production",
+    "params": {
+      "type": "USEnergyData",
+      "keyword": "crude oil production",
+      "location": "United States",
+      "frequency": "annual",
+      "date_start": "2023"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Beijing air quality",
+    "tag": "environment.aqi",
+    "params": {
+      "type": "GlobalAirQuality",
+      "location": "Beijing"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Big Buck Bunny",
+    "tag": "film.torrent",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "upcoming company earnings",
+    "tag": "finance.calendar",
+    "params": {
+      "type": "earnings",
+      "period": "7d"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple fundamentals",
+    "tag": "finance.fundamental",
+    "params": {
+      "type": "overview",
+      "symbol": "AAPL",
+      "cn_code": ""
+    },
+    "max_results": 1
+  },
+  {
+    "query": "United States federal funds rate",
+    "tag": "finance.macro",
+    "params": {
+      "type": "fed_funds",
+      "period": "30d"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial news",
+    "tag": "finance.news",
+    "params": {
+      "type": "general"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple stock price",
+    "tag": "finance.quote",
+    "params": {
+      "type": "stock",
+      "symbol": "AAPL"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "technology stocks",
+    "tag": "finance.screen",
+    "params": {
+      "type": "stock",
+      "country": "US",
+      "sector": "Technology"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Yasuo",
+    "tag": "gaming.esports",
+    "params": {
+      "type": "champion"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Portal 2",
+    "tag": "gaming.store",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "What is the capital of France?",
+    "tag": "general.general",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "aspirin",
+    "tag": "health.drug",
+    "params": {
+      "type": "name"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "life expectancy Japan",
+    "tag": "health.stats",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "type 2 diabetes",
+    "tag": "health.trial",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "solar cell",
+    "tag": "ip.global",
+    "params": {
+      "type": "GlobalPatent",
+      "keyword": "solar cell",
+      "ipc": "H01L"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "SEC securities enforcement",
+    "tag": "legal.enforcement",
+    "params": {
+      "jurisdiction": "US",
+      "regulatory_domain": "securities"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Brown v Board of Education",
+    "tag": "legal.judicial",
+    "params": {
+      "jurisdiction": "US",
+      "case_type": "civil"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Clean Air Act",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "US"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "mountain landscape",
+    "tag": "resource.image",
+    "params": {},
+    "max_results": 1
+  },
+  {
+    "query": "example.com reputation",
+    "tag": "security.intel",
+    "params": {
+      "ioc": "example.com"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "8.8.8.8 internet noise",
+    "tag": "security.noise",
+    "params": {
+      "ip": "8.8.8.8"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "empty file hash reputation",
+    "tag": "security.scan",
+    "params": {
+      "ioc": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "CVE-2021-44228",
+    "tag": "security.vuln",
+    "params": {
+      "type": "cve",
+      "value": "CVE-2021-44228"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python programming",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "reddit_post",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Flights from LAX to SFO",
+    "tag": "travel.flight",
+    "params": {
+      "departure": "LAX",
+      "arrival": "SFO",
+      "date": "2026-12-10",
+      "adults": "1",
+      "currency": "USD"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "CA981 flight status",
+    "tag": "travel.flight_status",
+    "params": {
+      "flight_number": "CA981",
+      "departure": "PEK"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "weibo",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "weibo_hot",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "zhihu",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "zhihu_hot",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "x_top",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "x_latest",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "x_media",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "x_people",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "x_lists",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "reddit_community",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "reddit_comment",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "reddit_media",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "reddit_people",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "linkedin_people",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "linkedin_jobs",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "linkedin_company",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "linkedin_posts",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Python",
+    "tag": "social_media.social_media",
+    "params": {
+      "type": "wechatmp",
+      "keyword": "Python"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "sina"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "wallstreetcn"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "10jqka"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "eastmoney"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "cls"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "yicai"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "yuncaijing"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "fenghuang"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "financial market news",
+    "tag": "finance.news",
+    "params": {
+      "type": "flash",
+      "news_src": "jinrongjie"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "climate",
+    "tag": "academic.dataset",
+    "params": {
+      "client_id": "figshare.ars",
+      "resource_type": "Dataset"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "climate",
+    "tag": "academic.dataset",
+    "params": {
+      "client_id": "bl.dryad",
+      "resource_type": "Dataset"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "transformer neural network",
+    "tag": "academic.paper",
+    "params": {
+      "data_source": "arxiv"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "transformer neural network",
+    "tag": "academic.paper",
+    "params": {
+      "data_source": "openalex"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "source": "MED"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "source": "PMC"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "source": "PPR"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "source": "AGR"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "source": "PAT"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Alibaba",
+    "tag": "business.company",
+    "params": {
+      "type": "ChineseEnterprise",
+      "keyword": "Alibaba"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple",
+    "tag": "business.company",
+    "params": {
+      "type": "USFilings",
+      "keyword": "Apple"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "software engineer",
+    "tag": "business.jobs",
+    "params": {
+      "type": "GeneralJobs",
+      "keyword": "software engineer"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "software engineer",
+    "tag": "business.jobs",
+    "params": {
+      "type": "USFederalJobs",
+      "keyword": "software engineer"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "example.com company email lookup",
+    "tag": "business.people",
+    "params": {
+      "type": "EmailLookup",
+      "keyword": "example.com"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "United States imports computers",
+    "tag": "business.trade",
+    "params": {
+      "type": "USImportExport",
+      "location": "United States",
+      "flow": "import",
+      "hs_code": "8471",
+      "date_start": "2023"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "France electricity generation",
+    "tag": "energy.electricity",
+    "params": {
+      "type": "EUElectricity",
+      "location": "France",
+      "metric": "generation"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "New South Wales electricity generation",
+    "tag": "energy.electricity",
+    "params": {
+      "type": "AustralianElectricity",
+      "location": "New South Wales",
+      "metric": "generation"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "California electricity generation",
+    "tag": "energy.electricity",
+    "params": {
+      "type": "USEnergyData",
+      "location": "California",
+      "metric": "generation"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "n8n workflow automation",
+    "zone": "cn",
+    "language": "zh-CN",
+    "format": "json",
+    "max_results": 1
+  },
+  {
+    "query": "n8n workflow automation",
+    "zone": "intl",
+    "language": "en",
+    "format": "markdown",
+    "max_results": 1
+  }
+]

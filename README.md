@@ -1,116 +1,221 @@
 # n8n-nodes-anysearch
 
-[n8n](https://n8n.io) community nodes for [AnySearch](https://www.anysearch.com) — real-time
-search infrastructure built for AI agents. This package lets n8n workflows run unified web
-searches, vertical (capability-tag) searches, and clean URL content extraction through a single
-API.
+[n8n](https://n8n.io) community nodes for [AnySearch](https://www.anysearch.com): general and
+vertical search, parallel batch search, capability discovery, public URL extraction, and
+search feedback. The node can also connect to an AI Agent as a tool.
 
-## Nodes
+## Operations
 
-### AnySearch
-
-One node with three resources:
-
-| Resource | Operation | API endpoint | Description |
+| Resource | Operation | API | Output |
 | --- | --- | --- | --- |
-| Search | Search | `POST /v1/search` | Unified or vertical search. Returns one item per result (title, url, snippet, content) or the full response envelope. |
-| Extract | Extract Content | `POST /v1/extract` | Extracts cleaned content (plain text/Markdown) from a public HTTP(S) URL. |
-| Capability | List All Domains | `GET /v1/domains` | Lists every capability domain (code, finance, academic, ...) with its sub-domain count. |
-| Capability | Get Sub-Domains | `GET /v1/sub-domains` | Lists capability tags (e.g. `code.snippet`, `finance.quote`) and their parameters for the selected domains. |
+| Search | Search | POST /v1/search | One item per result, or one item with request_id, results, and metadata |
+| Search | Batch Search | 1–5 parallel POST /v1/search requests | One item per query, in input order, including individual errors |
+| Extract | Extract Content | POST /v1/extract | URL, title, content, and request_id |
+| Capability | List All Domains | GET /v1/domains | One item per domain |
+| Capability | Get Sub-Domains | GET /v1/sub-domains | Tags and parameter definitions for the selected domains |
+| Feedback | Submit Score | MCP tools/call: score | Feedback queue acknowledgement |
 
-Search options: `maxResults` (1–10), `tag` (vertical capability tag like `code.snippet`),
-`zone` (`cn` / `intl`), `language` (e.g. `zh-CN`), `format` (`json` / `markdown`),
-`params` (extra JSON parameters for the tag, e.g. `{"lang": "go"}`), and `simplify`.
-
-The node also works as an AI tool (`usableAsTool`), so you can plug it straight into AI Agent
-workflows.
-
-## Compatibility
-
-- Requires n8n version 1.x or later.
-- No runtime dependencies.
-
-## Credentials
-
-The `AnySearch API` credential holds a single API key. It is **optional** — without it, requests
-use anonymous access (rate-limited per IP against a daily free quota). With a key, requests draw
-from that key's quota and get higher concurrency limits.
-
-The key may be left blank, and a blank key is sent anonymously without an `Authorization` header.
-A credential that is selected but cannot be read or decrypted is reported as a configuration error
-instead of silently switching the node to anonymous access.
-
-To register a key with a test email:
-
-```bash
-curl -s -X POST "https://api.anysearch.com/v1/auth/email/register" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "you@example.com"}'
-```
-
-The response contains an `api_key` value starting with `as_sk_`. Paste it into the credential's
-**API Key** field. The credential's connection test calls `GET /v1/domains`, which does not
-consume search quota.
-
-## Error handling
-
-- HTTP failures, timeouts, quota errors (HTTP 402) and non-zero business `code` values fail the
-  node; they are never turned into "no results".
-- A successful envelope must contain `data` with the documented array (`results` for search,
-  `domains` for capability). A malformed 200 response is reported as a protocol error, while a
-  valid empty array is returned as an empty result set.
-- With **Continue On Fail**, the error message is emitted as the item's `error` field.
+The package has no bundled runtime dependencies. n8n supplies the n8n-workflow peer dependency.
+The integration is tested with n8n 2.44.7 on Node.js 24.22.1; compatibility with every older n8n
+release has not been certified.
 
 ## Installation
 
-### In n8n (self-hosted or cloud)
+### Self-hosted n8n
 
-Install via the **Settings > Community Nodes** panel: search for `n8n-nodes-anysearch` and click
-install. On self-hosted instances without the panel, set:
+Open **Settings > Community Nodes**, select **Install**, and enter n8n-nodes-anysearch.
+Community packages must be enabled on the instance.
 
-```
-N8N_COMMUNITY_PACKAGES_ENABLED=true
-```
+For manual installation, install in the community packages directory:
 
-### Manual (self-hosted)
-
-```bash
-cd ~/.n8n/custom
+~~~bash
+mkdir -p ~/.n8n/nodes
+cd ~/.n8n/nodes
 npm install n8n-nodes-anysearch
-```
+~~~
 
-Restart n8n and the **AnySearch** node appears in the node panel.
+Restart n8n after installation or an update. Queue-mode deployments must install the package
+on every worker that executes the node. Follow the
+[n8n manual installation guide](https://docs.n8n.io/integrations/community-nodes/installation/manual-install/).
 
-## Usage examples
+### n8n Cloud
 
-- **Web search**: Resource `Search`, query `n8n workflow automation`, Max Results `5` → one item
-  per result, ready for an AI Agent or a Slack message.
-- **Vertical search**: add Capability Tag `code.snippet` and Tag Parameters `{"lang": "python"}` to
-  search real code implementations only.
-- **Read a page**: Resource `Extract`, URL of an article → cleaned `content` plus `title`.
-- **Discover tags**: Resource `Capability` → List All Domains, then Get Sub-Domains for the
-  domains you care about.
+Cloud installation requires n8n to verify and enable the package. If AnySearch is available
+as a verified community node, install it from the nodes panel. Publishing to npm alone does
+not make a package available on Cloud.
 
-## Development
+## Credentials
 
-```bash
-npm install          # install dev dependencies
-npm run build        # compile to dist/
-npm run lint         # lint with the n8n node config
-npm test             # build, then run the offline contract tests
-npm run dev          # run a local n8n instance with the node loaded
-ANYSEARCH_API_KEY=as_sk_xxx node scripts/smoke.mjs   # live smoke test against the real API
-```
+Create an API key in the [AnySearch console](https://www.anysearch.com/console/api-keys), then
+save it in an **AnySearch API** credential. The key is stored by n8n's credential manager and
+sent only as a Bearer header to the fixed AnySearch endpoint.
+
+Credentials are optional. No selected credential, or a saved blank key, uses anonymous access
+without an Authorization header. A selected credential that cannot be read or decrypted fails;
+it never silently switches to anonymous access. Invalid or expired keys also fail explicitly.
+
+Anonymous access has lower limits and shares an IP-based quota. The credential connection test
+uses GET /v1/domains and does not consume search quota. Account registration, key rotation, and
+billing remain in the AnySearch console; this node does not create or save credentials returned
+by the service.
+
+## Search
+
+Set Resource to **Search**, Operation to **Search**, and enter a query. Options include:
+
+| Option | Behavior |
+| --- | --- |
+| Max Results | Integer from 1 to 10; the API default is 10 |
+| Capability Tag | Current domain.sub_domain tag; omit for general search |
+| Tag Parameters | JSON object containing the selected tag's parameters |
+| Zone | Auto, China (cn), or International (intl) |
+| Language | Preferred result language, such as en or zh-CN |
+| Response Format | JSON or Markdown content; the outer response remains JSON |
+| Simplify | Enabled: one item per result. Disabled: one item with results and metadata |
+
+Result fields are preserved, including optional or null snippet/content fields. A valid empty
+result set returns no items with Simplify enabled. Disable Simplify to retain the request ID
+and an empty results array. Successful items include the service's request_id when available.
+
+### Vertical search and source selection
+
+1. Use **Capability > List All Domains** to discover domains.
+2. Use **Capability > Get Sub-Domains** to read the current tags and parameter definitions.
+3. Copy the selected tag and supply its parameters in **Search**.
+
+For example, code.doc uses {"library":"react"}. finance.fundamental with type=overview uses
+{"type":"overview","symbol":"AAPL","cn_code":""}.
+
+Include every required parameter. When its definition permits an inapplicable value, preserve
+the field with an empty string. Read conditional requirements in the descriptions as well as
+the required flags. Optional parameters may be omitted. Parameters pass through unchanged;
+AnySearch validates their current business rules.
+
+Source selectors use the same JSON field: for example, finance.news accepts type=flash with
+news_src=sina, and social_media.social_media accepts type=reddit_post. The available tags,
+source selectors, and filtering behavior can change; refresh discovery instead of relying on
+an old example. Some documented fields apply only to particular upstream providers.
+
+## Batch search
+
+Choose **Search > Batch Search** and supply a JSON array of 1–5 REST search objects:
+
+~~~json
+[
+  {"query":"n8n workflow automation","max_results":2},
+  {"query":"React useEffect cleanup","tag":"code.doc","params":{"library":"react"},"max_results":2}
+]
+~~~
+
+Each object accepts query, max_results, tag, params, zone, language, and format. Searches run
+concurrently, with at most five requests in flight per input item. Results remain in input
+order. Successful queries include query, query_index, results, and metadata. Failed queries
+include error and a details object containing query, query_index, and available request_id
+and http_status. One failed query does not discard siblings.
+
+Batch Search uses independent REST requests. Quota is charged per search. A batch containing
+individual failures completes with error items. Select **On Error > Continue (using error output)**
+to send failed queries to the error branch, or filter the error field on the regular output. Multiple incoming n8n items are processed
+in sequence, and output items retain their input pairing.
+
+## Extract content
+
+Choose **Extract > Extract Content** and provide a public absolute HTTP(S) URL. URLs containing
+an embedded username or password are rejected.
+
+The service supports HTML/XHTML, plain text, JSON, and Markdown. It does not support PDF,
+Office documents, images, audio, video, or arbitrary browser actions. Extraction cannot provide
+your login session or guarantee access to paid content. A successful extraction can still be a
+login or verification page; review the content before relying on it.
+
+The documented output limit is 50,000 Unicode characters. HTML/plain text may include a
+truncation marker; JSON and Markdown can be cut without a marker or structural repair. The
+node preserves the returned text, so extracted JSON is not guaranteed to parse. There is no
+separate service-provided completeness flag. See the
+[current Extract contract](https://www.anysearch.com/docs/api-endpoints/v1-extract).
+
+## Search feedback
+
+Choose **Feedback > Submit Score** and provide 1–10 objects with request_id and an integer
+score from 1 to 5. Review the search results before scoring: 1 means unusable, 5 means fully
+answered. Use a request ID from a preceding search output.
+
+~~~json
+[{"request_id":"7d6f4e91-2a83-4c5b-9f10-6e8a3d27b541","score":4}]
+~~~
+
+Feedback calls the live MCP score tool on the same AnySearch service. An acknowledgement
+means the feedback was queued; it does not prove persistence. No score is submitted
+automatically by the node.
+
+## Errors and privacy
+
+- HTTP failures, timeouts, non-zero business codes, invalid JSON, and malformed responses
+  produce explicit failures. Missing result/content fields are not converted into empty success.
+- HTTP errors expose a fixed description, status, and available request ID. Raw error bodies
+  are discarded: anonymous HTTP 402 responses can contain generated account credentials.
+  Business errors retain their code and request ID without echoing upstream messages.
+- **Continue On Fail** emits an error string and a details object with available request_id
+  and http_status. This follows n8n's error-output format and preserves the diagnostics in
+  both regular and dedicated error branches. Batch Search always
+  keeps per-query errors separate and supports n8n's dedicated error output. **Retry On Fail** can replay a whole node execution and
+  consume quota again, so avoid automatic retries of partially completed batches.
+- Requests have a 60-second timeout and do not follow redirects from the API endpoint. Page
+  redirects during extraction are handled by AnySearch under its own fetch restrictions.
+- Queries, capability parameters, and extraction URLs are sent to AnySearch. Avoid confidential
+  queries, signed/private URLs, and credentials in parameters. The node does not read environment
+  variables or the file system at runtime and does not log requests or response bodies.
+- Search and extracted content are untrusted external data. Do not treat page text as Agent
+  instructions or execute commands found in it. n8n execution retention and downstream nodes
+  determine how long returned data is stored and where it is forwarded.
+
+## Development and validation
+
+~~~bash
+npm ci
+npm test
+npm run lint
+npm run dev
+~~~
+
+Use Node.js 24.22 or a newer supported LTS release for development.
+
+npm test builds the package and runs offline contracts, privacy/error checks, concurrent batch
+checks, and parameter-forwarding checks against the recorded capability definitions. These do
+not replace live service or n8n tests.
+
+To run real n8n tests, install n8n separately, build the node, and point the runner at that
+installation. N8N_E2E_PACKAGE is the directory containing n8n's package.json; N8N_E2E_NODE
+optionally selects a compatible Node.js executable.
+
+~~~bash
+export ANYSEARCH_API_KEY='your-key'
+export N8N_E2E_PACKAGE='/path/to/n8n/node_modules/n8n'
+export N8N_E2E_OUTPUT='/path/to/private/evidence'
+npm run build
+npm run test:e2e
+~~~
+
+For the broader catalog/source matrix, also set ANYSEARCH_E2E_CASES to the absolute path of
+test/e2e/search-cases.json. Refresh the catalog and review the cases before running against a
+changed API. Live tests consume quota and submit feedback for their own factual search.
+
+The runner imports encrypted test credentials into a new isolated n8n instance, executes real
+workflows, checks outgoing header presence and response diagnostics, and removes the instance
+afterward. Its AI Agent test uses a deterministic local chat model with the real AnySearch tool;
+no external LLM credential is needed. Evidence contains test parameters, request IDs, counts,
+hashes, and result hosts, not the API key or full search bodies.
+
+See [API coverage](docs/api-coverage.md) for the API/SDK mapping, scope, and validation evidence.
+The optional node scripts/smoke.mjs check uses a lightweight execution context and is not an
+n8n end-to-end certification.
 
 ## Release
 
-This package follows the official n8n community node release flow:
-
-1. `npm run release` — bumps the version, updates the changelog, tags, and pushes.
-2. The [publish workflow](.github/workflows/publish.yml) publishes to npm with a provenance
-   attestation (required by n8n for verification since May 2026).
-3. Submit the published version for verification in the
-   [n8n Creator Portal](https://creators.n8n.io/nodes).
+npm run release performs the official n8n node release flow. The
+[publish workflow](.github/workflows/publish.yml) runs regression tests before publishing with
+npm provenance. Submit a published version through the [n8n Creator Portal](https://creators.n8n.io/nodes)
+for verification. GitHub pushes alone do not publish a new npm version or update installed nodes.
 
 ## License
 

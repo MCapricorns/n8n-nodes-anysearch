@@ -15,7 +15,13 @@ function validBody(pathname) {
 			code: 0,
 			request_id: 'fixture-request-id',
 			data: {
-				results: [{ title: 'Fixture title', url: 'https://example.com/fixture', content: 'Fixture content' }],
+				results: [
+					{
+						title: 'Fixture title',
+						url: 'https://example.com/fixture',
+						content: 'Fixture content',
+					},
+				],
 				metadata: { pages: 1 },
 			},
 		};
@@ -27,10 +33,24 @@ function validBody(pathname) {
 		};
 	}
 	if (pathname === '/v1/domains') {
-		return { code: 0, data: { domains: [{ domain: 'code', description: 'Code', sub_domain_count: 2 }] } };
+		return {
+			code: 0,
+			data: { domains: [{ domain: 'code', description: 'Code', sub_domain_count: 2 }] },
+		};
 	}
 	if (pathname === '/v1/sub-domains') {
-		return { code: 0, data: { domains: [{ domain: 'code.code', description: 'Code snippets' }] } };
+		return {
+			code: 0,
+			data: {
+				domains: [
+					{
+						domain: 'code',
+						description: 'Code',
+						sub_domains: [{ sub_domain: 'code.snippet', description: 'Code snippets' }],
+					},
+				],
+			},
+		};
 	}
 	throw new Error(`Offline fixture has no payload for ${pathname}`);
 }
