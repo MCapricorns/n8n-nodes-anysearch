@@ -18,8 +18,13 @@ export async function runFaultWorkflows({
 		const chunks = [];
 		for await (const chunk of request) chunks.push(chunk);
 		const body = JSON.parse(Buffer.concat(chunks).toString());
-		const scenario = body.query || new URL(body.url).pathname.slice(1);
-		requests.push({ scenario, authorizationPresent: Boolean(request.headers.authorization) });
+		const scenario =
+			body.query || (body.url ? new URL(body.url).pathname.slice(1) : 'unexpected-request');
+		requests.push({
+			scenario,
+			path: request.url,
+			authorizationPresent: Boolean(request.headers.authorization),
+		});
 		if (scenario === 'timeout') return;
 		const status = scenario.startsWith('http-') ? Number(scenario.slice(5)) : 200;
 		response.writeHead(status, {
@@ -192,6 +197,41 @@ export async function runFaultWorkflows({
 		assert.equal(stopped.data.resultData.error.context.http_status, 402);
 		assert.equal(stopped.data.resultData.error.context.request_id, 'fault-http-402');
 		tests.push({ name: 'stop-on-failure', passed: true });
+		for (const onError of ['continueRegularOutput', 'continueErrorOutput', 'stopWorkflow']) {
+			const feedback = {
+				id: 'feedback',
+				name: 'Removed Feedback',
+				type: 'n8n-nodes-anysearch.anySearch',
+				typeVersion: 1,
+				position: [400, 0],
+				parameters: {
+					resource: 'feedback',
+					operation: 'score',
+					feedbacks: [{ request_id: 'reviewed-id', score: 4 }],
+				},
+				credentials: { anySearchApi: { id: 'invalid', name: 'invalid' } },
+				onError,
+			};
+			const before = requests.length;
+			const result = await executeWorkflow({
+				...workflow,
+				id: 'Feedback' + onError,
+				name: 'Removed Feedback ' + onError,
+				nodes: [nodes[0], feedback],
+				connections: { Start: { main: [[{ node: feedback.name, type: 'main', index: 0 }]] } },
+			});
+			assert.equal(requests.length, before, 'Removed Feedback sent an HTTP request');
+			if (onError === 'stopWorkflow') {
+				assert.equal(result.status, 'error');
+				assert.equal(result.data.resultData.error.node.name, feedback.name);
+			} else {
+				assert.equal(result.status, 'success');
+				const channel = onError === 'continueErrorOutput' ? 1 : 0;
+				const run = result.data.resultData.runData[feedback.name].at(-1);
+				assert(run.data.main[channel][0].json.error);
+			}
+			tests.push({ name: 'removed-feedback-' + onError, passed: true, requestCount: 0 });
+		}
 		assert.equal(requests.filter((request) => request.scenario === 'http-402').length, 2);
 		assert.equal(requests.filter((request) => request.scenario === 'http-429').length, 2);
 		return { passed: tests.every((test) => test.passed), tests, requests, privacyPassed: true };

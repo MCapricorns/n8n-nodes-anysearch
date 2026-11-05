@@ -610,6 +610,14 @@ try {
 		.map((line) => JSON.parse(line));
 	assert(summary.requests.length > 0, 'No real AnySearch HTTP requests observed');
 	assert(
+		summary.requests.every(
+			(request) =>
+				/^\/v1\/(search|extract|domains|sub-domains)(?:\?|$)/.test(request.path) &&
+				request.body?.jsonrpc === undefined,
+		),
+		'AnySearch operations must use the REST API',
+	);
+	assert(
 		summary.requests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);

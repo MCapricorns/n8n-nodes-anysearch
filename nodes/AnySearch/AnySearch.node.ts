@@ -126,10 +126,10 @@ async function readApiKey(this: AnySearchRequestContext): Promise<string | undef
 	return credentials.apiKey.trim() || undefined;
 }
 
-async function anySearchHttpRequest(
+async function anySearchRequest(
 	this: AnySearchRequestContext,
 	options: IHttpRequestOptions,
-): Promise<{ body: unknown; requestId?: string }> {
+): Promise<AnySearchEnvelope> {
 	const requestOptions: IHttpRequestOptions = {
 		...options,
 		json: true,
@@ -167,15 +167,7 @@ async function anySearchHttpRequest(
 			response.statusCode,
 		);
 	}
-	return { body: response.body, requestId };
-}
-
-async function anySearchRequest(
-	this: AnySearchRequestContext,
-	options: IHttpRequestOptions,
-): Promise<AnySearchEnvelope> {
-	const response = await anySearchHttpRequest.call(this, options);
-	return validateEnvelope(this.getNode(), response.body, response.requestId);
+	return validateEnvelope(this.getNode(), response.body, requestId);
 }
 
 function validateEnvelope(node: INode, response: unknown, requestId?: string): AnySearchEnvelope {

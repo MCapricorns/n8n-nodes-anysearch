@@ -173,8 +173,7 @@ npm run dev
 Use Node.js 24.22 or a newer supported LTS release for development.
 
 npm test builds the package and runs offline contracts, privacy/error checks, concurrent batch
-checks, and parameter-forwarding checks against the recorded capability definitions. These do
-not replace live service or n8n tests.
+checks, and capability parameter-forwarding checks. These do not replace live service or n8n tests.
 
 To run real n8n tests, install n8n separately, build the node, and point the runner at that
 installation. N8N_E2E_PACKAGE is the directory containing n8n's package.json; N8N_E2E_NODE
@@ -194,16 +193,15 @@ changed API. Live tests consume quota.
 
 The runner imports encrypted test credentials into a new isolated n8n instance, executes real
 workflows, checks outgoing header presence and response diagnostics, and removes the instance
-afterward. Its AI Agent test uses a deterministic local chat model with the real AnySearch tool;
-no external LLM credential is needed. Evidence contains test parameters, request IDs, counts,
-hashes, and result hosts, not the API key or full search bodies.
-
-The optional node scripts/smoke.mjs check uses a lightweight execution context and is not an
-n8n end-to-end certification.
+afterward. It verifies that all service requests use REST and that saved Feedback steps fail
+without sending requests in every n8n error mode. Its AI Agent test uses a deterministic local
+chat model with the real AnySearch tool; no external LLM credential is needed. Evidence contains
+test parameters, request IDs, counts, hashes, and result hosts, not the API key or full search bodies.
 
 ## Release
 
-npm run release performs the official n8n node release flow. The
+npm pack rebuilds the package before creating the archive. npm run release performs the official
+n8n node release flow. The
 [publish workflow](.github/workflows/publish.yml) runs regression tests before publishing with
 npm provenance. Submit a published version through the [n8n Creator Portal](https://creators.n8n.io/nodes)
 for verification. GitHub pushes alone do not publish a new npm version or update installed nodes.

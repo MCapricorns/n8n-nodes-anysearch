@@ -21,6 +21,7 @@
 	},
 	"scripts": {
 		"build": "n8n-node build",
+		"prepack": "npm run build",
 		"dev": "n8n-node dev",
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
