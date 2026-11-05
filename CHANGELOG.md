@@ -2,12 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.1.1 (2026-11-04)
+## 1.1.2 (2026-11-05)
 
-- Remove Feedback > Submit Score and the embedded MCP client to comply with n8n community node verification requirements; all remaining operations use the AnySearch REST API.
 - Verify REST-only requests and ensure saved Feedback steps cannot send requests in any n8n error mode.
 - Rebuild before packing and consolidate REST request handling.
 - Remove the duplicate smoke runner and catalog fixture tests; retain focused contracts and the live capability matrix.
+
+## 1.1.1 (2026-11-04)
+
+- Remove Feedback > Submit Score and the embedded MCP client to comply with n8n community node verification requirements; all remaining operations use the AnySearch REST API.
+- Remove feedback from the live workflow runner and add regression coverage ensuring saved Feedback steps cannot send requests.
 - Document migration to n8n's built-in MCP Client Tool for MCP-only operations.
 - Stop tracking the docs directory and remove the README link to it.
 
