@@ -5,7 +5,17 @@
     "params": {
       "id": "10.1038/s41586-021-03819-2",
       "id_type": "doi",
-      "op": "metadata"
+      "op": "metadata",
+      "doi": "10.1038/s41586-021-03819-2",
+      "type": "journal-article",
+      "filter": "creation:2021-*-*",
+      "sort": "creation:desc",
+      "open_access": "true",
+      "min_citations": "1",
+      "venue": "Nature",
+      "category": "Biology",
+      "year_from": "2021",
+      "year_to": "2022"
     },
     "max_results": 1
   },
@@ -14,7 +24,9 @@
     "tag": "academic.dataset",
     "params": {
       "client_id": "cern.zenodo",
-      "resource_type": "Dataset"
+      "resource_type": "Dataset",
+      "year_from": "2020",
+      "year_to": "2025"
     },
     "max_results": 1
   },
@@ -23,7 +35,14 @@
     "tag": "academic.paper",
     "params": {
       "year_from": "2017",
-      "year_to": "2018"
+      "year_to": "2018",
+      "authors": "Ashish Vaswani",
+      "categories": "cs.CL",
+      "kind": "abstract",
+      "domain": "arxiv.org",
+      "citation_doi": "10.48550/arXiv.1706.03762",
+      "citation_count": "100",
+      "venue": "NeurIPS"
     },
     "max_results": 1
   },
@@ -31,7 +50,10 @@
     "query": "Geoffrey Hinton",
     "tag": "academic.person",
     "params": {
-      "name": "Geoffrey Hinton"
+      "name": "Geoffrey Hinton",
+      "affiliations": "University of Toronto",
+      "schools": "University of Edinburgh",
+      "research_areas": "machine learning"
     },
     "max_results": 1
   },
@@ -42,7 +64,8 @@
       "domain": "production",
       "keyword": "wheat production",
       "location": "World",
-      "date_start": "2023"
+      "date_start": "2023",
+      "type": "GlobalAgriculture"
     },
     "max_results": 1
   },
@@ -70,7 +93,9 @@
     "params": {
       "type": "PeopleSearch",
       "keyword": "Microsoft",
-      "title": "CTO"
+      "title": "CTO",
+      "location": "California",
+      "seniority": "executive"
     },
     "max_results": 1
   },
@@ -99,7 +124,8 @@
     "tag": "code.snippet",
     "params": {
       "lang": "TypeScript",
-      "repo": "facebook/react"
+      "repo": "facebook/react",
+      "path": "packages/react"
     },
     "max_results": 1
   },
@@ -154,7 +180,8 @@
     "params": {
       "type": "overview",
       "symbol": "AAPL",
-      "cn_code": ""
+      "cn_code": "",
+      "period": "annual"
     },
     "max_results": 1
   },
@@ -180,7 +207,8 @@
     "tag": "finance.quote",
     "params": {
       "type": "stock",
-      "symbol": "AAPL"
+      "symbol": "AAPL",
+      "period": "7d"
     },
     "max_results": 1
   },
@@ -240,7 +268,9 @@
     "params": {
       "type": "GlobalPatent",
       "keyword": "solar cell",
-      "ipc": "H01L"
+      "ipc": "H01L",
+      "applicant": "Panasonic",
+      "date_start": "2020"
     },
     "max_results": 1
   },
@@ -326,7 +356,14 @@
       "arrival": "SFO",
       "date": "2026-12-10",
       "adults": "1",
-      "currency": "USD"
+      "currency": "USD",
+      "type": "FlightSearch",
+      "cabin_class": "Economy",
+      "children": "1",
+      "infants": "0",
+      "origin": "LAX",
+      "destination": "SFO",
+      "return_date": "2026-12-17"
     },
     "max_results": 1
   },
@@ -335,7 +372,9 @@
     "tag": "travel.flight_status",
     "params": {
       "flight_number": "CA981",
-      "departure": "PEK"
+      "departure": "PEK",
+      "date": "2026-11-26",
+      "type": "FlightStatus"
     },
     "max_results": 1
   },
@@ -353,7 +392,8 @@
     "tag": "social_media.social_media",
     "params": {
       "type": "weibo_hot",
-      "keyword": "Python"
+      "keyword": "Python",
+      "region": "Beijing"
     },
     "max_results": 1
   },
@@ -604,7 +644,11 @@
     "query": "transformer neural network",
     "tag": "academic.paper",
     "params": {
-      "data_source": "arxiv"
+      "data_source": "arxiv",
+      "category": "cs.LG",
+      "field": "ti",
+      "sort": "date",
+      "order": "desc"
     },
     "max_results": 1
   },
@@ -612,7 +656,11 @@
     "query": "transformer neural network",
     "tag": "academic.paper",
     "params": {
-      "data_source": "openalex"
+      "data_source": "openalex",
+      "language": "en",
+      "min_citations": "5",
+      "open_access": "true",
+      "type": "article"
     },
     "max_results": 1
   },
@@ -620,7 +668,9 @@
     "query": "diabetes",
     "tag": "academic.paper",
     "params": {
-      "source": "MED"
+      "source": "MED",
+      "date_type": "pdat",
+      "field": "tiab"
     },
     "max_results": 1
   },
@@ -628,7 +678,10 @@
     "query": "diabetes",
     "tag": "academic.paper",
     "params": {
-      "source": "PMC"
+      "source": "PMC",
+      "has_pdf": "true",
+      "publication_type": "journal_article",
+      "journal": "Nature"
     },
     "max_results": 1
   },
@@ -679,7 +732,9 @@
     "tag": "business.jobs",
     "params": {
       "type": "GeneralJobs",
-      "keyword": "software engineer"
+      "keyword": "software engineer",
+      "location": "San Francisco",
+      "salary_min": "80000"
     },
     "max_results": 1
   },
@@ -719,7 +774,9 @@
     "params": {
       "type": "EUElectricity",
       "location": "France",
-      "metric": "generation"
+      "metric": "generation",
+      "date_start": "2026-05-23",
+      "date_end": "2026-05-24"
     },
     "max_results": 1
   },
@@ -755,6 +812,210 @@
     "zone": "intl",
     "language": "en",
     "format": "markdown",
+    "max_results": 1
+  },
+  {
+    "query": "Attention Is All You Need",
+    "tag": "academic.paper",
+    "params": {
+      "doi": "10.48550/arXiv.1706.03762",
+      "document_type": "research"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Josiah Carberry",
+    "tag": "academic.person",
+    "params": {
+      "orcid": "0000-0002-1825-0097"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple earnings calendar",
+    "tag": "finance.calendar",
+    "params": {
+      "type": "earnings",
+      "symbol": "AAPL",
+      "period": "90d"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "贵州茅台业绩日历",
+    "tag": "finance.calendar",
+    "params": {
+      "type": "earnings",
+      "cn_code": "600519.SH"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "贵州茅台股价",
+    "tag": "finance.quote",
+    "params": {
+      "type": "stock",
+      "cn_code": "600519.SH"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "贵州茅台公司公告",
+    "tag": "finance.news",
+    "params": {
+      "type": "announcement",
+      "cn_code": "600519.SH",
+      "period": "7d"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Apple company news",
+    "tag": "finance.news",
+    "params": {
+      "type": "stock",
+      "symbol": "AAPL"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Hide on Bush champion mastery",
+    "tag": "gaming.esports",
+    "params": {
+      "type": "mastery",
+      "game_name": "Hide on Bush#KR1",
+      "region": "kr",
+      "champion": "Yasuo"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "League of Legends match",
+    "tag": "gaming.esports",
+    "params": {
+      "type": "match_detail",
+      "match_id": "KR_7482819248"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Korean Gold I leaderboard",
+    "tag": "gaming.esports",
+    "params": {
+      "type": "leaderboard",
+      "region": "kr",
+      "tier": "GOLD",
+      "division": "I",
+      "queue": "RANKED_SOLO_5x5"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "FTC Facebook privacy settlement",
+    "tag": "legal.enforcement",
+    "params": {
+      "jurisdiction": "US",
+      "authority": "Federal Trade Commission",
+      "currency": "USD",
+      "decision_date": "2019-07-24",
+      "decision_number": "182 3109",
+      "decision_type": "penalty",
+      "legal_basis": "Federal Trade Commission Act",
+      "penalty_amount": "5000000000",
+      "penalty_types": "fine",
+      "regulatory_domain": "data_protection",
+      "subject_names": "Facebook"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "R v Jordan",
+    "tag": "legal.judicial",
+    "params": {
+      "jurisdiction": "CA",
+      "case_id": "2016scc27",
+      "database_id": "csc-scc",
+      "case_number": "2016 SCC 27",
+      "court": "Supreme Court of Canada",
+      "judgment_date": "2016-07-08",
+      "language": "en",
+      "document_type": "judgment"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "劳动合同纠纷",
+    "tag": "legal.judicial",
+    "params": {
+      "jurisdiction": "CN",
+      "cause_of_action": "劳动合同纠纷",
+      "procedure": "first_instance",
+      "service": "case"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "right to a fair hearing France",
+    "tag": "legal.judicial",
+    "params": {
+      "jurisdiction": "ECHR",
+      "respondent": "FRA",
+      "doc_type": "JUDGMENT",
+      "legal_basis": "Article 6"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Clean Air Act regulations",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "US",
+      "collection": "CFR",
+      "title": "40",
+      "agency": "environmental-protection-agency",
+      "date_from": "2020-01-01",
+      "date_to": "2026-01-01"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Clean Air Act bills",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "US",
+      "collection": "BILLS",
+      "congress": "119",
+      "legal_level": "bill",
+      "language": "en"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "中华人民共和国民法典",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "CN",
+      "article_number": "第二十条",
+      "document_number": "主席令第四十五号",
+      "effective_from": "2021-01-01",
+      "effective_to": "2026-12-31",
+      "effective_status": "effective",
+      "historical": "true",
+      "issuing_authority": "全国人民代表大会",
+      "legal_level": "statute",
+      "doc_type": "law",
+      "service": "law"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Canadian federal environmental regulations",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "CA",
+      "database_id": "car",
+      "resource_kind": "rules"
+    },
     "max_results": 1
   }
 ]

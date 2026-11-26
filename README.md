@@ -14,6 +14,11 @@ The node can also connect to an AI Agent as a tool.
 | Capability | List All Domains | GET /v1/domains | One item per domain |
 | Capability | Get Sub-Domains | GET /v1/sub-domains | Tags and parameter definitions for the selected domains |
 
+The public REST reference lists Search, Get Sub-Domains and Extract. Search supports all seven
+request fields. Get Sub-Domains repeats `domain` for each selection, and Extract takes `url`.
+The node also uses the live `GET /v1/domains` endpoint to populate the domain picker and test
+credentials. [AnySearch REST reference](https://www.anysearch.com/docs/api-endpoints)
+
 The package has no bundled runtime dependencies. n8n supplies the n8n-workflow peer dependency.
 The integration is tested with n8n 2.44.7 on Node.js 24.22.1; compatibility with every older n8n
 release has not been certified.
@@ -144,10 +149,9 @@ separate service-provided completeness flag. See the
 
 ## Migrating from 1.1.0
 
-Version 1.1.1 removes **Feedback > Submit Score** and its MCP client. This community node
-uses only the AnySearch REST API. Existing Feedback steps will fail without sending a request;
-replace them with n8n's built-in **MCP Client Tool** node if you need AnySearch's MCP score tool.
-Search, Batch Search, Extract, and Capability operations continue to use REST.
+Version 1.1.1 removed **Feedback > Submit Score** and its MCP client. Remove any saved
+Feedback steps before running older workflows. Search, Batch Search, Extract and Capability
+use the AnySearch REST API.
 
 ## Errors and privacy
 
@@ -203,8 +207,10 @@ results, field-specific failures, and the HTTP requests sent by n8n. Set `ANYSEA
 to an unpacked npm package directory to test that artifact.
 
 For the broader catalog/source matrix, also set ANYSEARCH_E2E_CASES to the absolute path of
-test/e2e/search-cases.json. Refresh the catalog and review the cases before running against a
-changed API. Live tests consume quota.
+test/e2e/search-cases.json. The runner compares each input with the actual HTTP request by
+request ID and checks coverage of every tag and parameter in the live catalog. Result arrays
+can be empty for narrow filters. Coverage measures parameter forwarding and API acceptance.
+Provider-specific filtering requires checking the returned sources. Live tests consume quota.
 
 The runner imports encrypted test credentials into a new isolated n8n instance, executes real
 workflows, checks outgoing header presence and response diagnostics, and removes the instance

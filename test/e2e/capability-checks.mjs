@@ -181,3 +181,38 @@ export function checkCapabilityRequests(requests, tests) {
 		assert.deepEqual(sent[0].body.params, entry.sent ?? entry.params);
 	}
 }
+
+export function checkCatalogRequests(inputs, requests, domains) {
+	const byId = new Map(requests.map((request) => [request.request_id, request]));
+	const covered = new Map();
+	for (const [id, input] of inputs) {
+		const sent = byId.get(id);
+		assert.equal(sent?.status, 200, id);
+		assert.equal(sent.code, 0);
+		for (const [key, value] of Object.entries(input)) {
+			if (key !== 'params') assert.deepEqual(sent.body[key], value, key);
+			else
+				for (const [field, v] of Object.entries(value))
+					assert.deepEqual(sent.body.params?.[field], v, field);
+		}
+		if (input.tag) {
+			const fields = covered.get(input.tag) ?? new Set();
+			for (const field of Object.keys(sent.body.params ?? {})) fields.add(field);
+			covered.set(input.tag, fields);
+		}
+	}
+	let tags = 0,
+		parameters = 0;
+	const missing = [];
+	for (const { sub_domains } of domains) {
+		for (const { sub_domain, params } of sub_domains) {
+			tags++;
+			if (!covered.has(sub_domain)) missing.push(sub_domain);
+			for (const field of Object.keys(params ?? {})) {
+				parameters++;
+				if (!covered.get(sub_domain)?.has(field)) missing.push(sub_domain + '.' + field);
+			}
+		}
+	}
+	return { requests: inputs.size, domains: domains.length, tags, parameters, missing };
+}

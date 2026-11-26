@@ -80,7 +80,11 @@ function scenario({
 			httpRequestWithAuthentication: (_type, options) => send('authenticated', options),
 		},
 	};
-	return { requests, execute: () => AnySearch.prototype.execute.call(context) };
+	return {
+		requests,
+		execute: () => AnySearch.prototype.execute.call(context),
+		loadDomains: () => new AnySearch().methods.loadOptions.getDomains.call(context),
+	};
 }
 
 async function runCase(configured) {
@@ -146,6 +150,16 @@ test('search rejects malformed tag parameters before any request', async () => {
 	const r = await runCase({ parameters: { options: { params: 'not json' } } });
 	assert.equal(r.outcome, 'error');
 	assert.equal(r.requests.length, 0);
+});
+
+test('explicit JSON format is forwarded and incomplete tags fail before HTTP', async () => {
+	const r = await runCase({ parameters: { options: { tag: 'future.new-tag', format: 'json' } } });
+	assert.equal(r.requests[0].body.format, 'json');
+	for (const tag of ['finance', 'finance.', '.quote', 'finance.quote.extra']) {
+		const invalid = await runCase({ parameters: { options: { tag } } });
+		assert.match(invalid.message, /domain\.sub_domain/);
+		assert.equal(invalid.requests.length, 0);
+	}
 });
 
 test('search rejects an empty query before any request', async () => {
@@ -288,6 +302,18 @@ test('domain listing without data.domains is an error', async () => {
 	});
 	assert.equal(r.outcome, 'error');
 	assert.match(r.message, /data\.domains/);
+});
+
+test('the domain picker reads the same domain definitions as the capability operation', async () => {
+	const s = scenario({
+		response: { code: 0, data: { domains: [{ domain: 'finance', description: 'Finance' }] } },
+	});
+	assert.deepEqual(await s.loadDomains(), [{ value: 'finance', name: 'finance — Finance' }]);
+	assert.equal(s.requests[0].url, 'https://api.anysearch.com/v1/domains');
+	const invalid = scenario({
+		response: { code: 0, data: { domains: [{ description: 'missing name' }] } },
+	});
+	await assert.rejects(invalid.loadDomains(), /invalid domain/);
 });
 
 test('sub-domain listing repeats the domain query parameter', async () => {

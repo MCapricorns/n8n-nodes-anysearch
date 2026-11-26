@@ -1,6 +1,17 @@
 // Records only test request parameters, header presence, and response diagnostics.
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
+const maxBodyBytes = 4 * 1024 * 1024;
+
+function readResponse(chunks, encoding) {
+	let bytes = Buffer.concat(chunks);
+	const options = { maxOutputLength: maxBodyBytes };
+	if (encoding === 'gzip' || encoding === 'deflate') bytes = zlib.unzipSync(bytes, options);
+	else if (encoding === 'br') bytes = zlib.brotliDecompressSync(bytes, options);
+	return JSON.parse(bytes.toString());
+}
+
 for (const protocol of ['http', 'https']) {
 	const transport = require('node:' + protocol);
 	const original = transport.request;
@@ -26,14 +37,16 @@ for (const protocol of ['http', 'https']) {
 				return send.call(this, chunk, ...rest);
 			};
 		}
-		request.on('response', (response) => {
+		// Capture the encoding before the HTTP client decodes the stream and removes the header.
+		request.prependListener('response', (response) => {
+			const encoding = response.headers['content-encoding'];
 			record.status = response.statusCode;
 			record.request_id = response.headers['x-request-id'];
 			const bodyChunks = [];
 			let size = 0;
 			response.on('data', (chunk) => {
 				size += chunk.length;
-				if (size <= 4 * 1024 * 1024) bodyChunks.push(chunk);
+				if (size <= maxBodyBytes) bodyChunks.push(chunk);
 			});
 			response.on('end', () => {
 				record.finishedAt = Date.now();
@@ -41,7 +54,7 @@ for (const protocol of ['http', 'https']) {
 					record.body = JSON.parse(Buffer.concat(chunks).toString());
 				} catch {}
 				try {
-					const body = JSON.parse(Buffer.concat(bodyChunks).toString());
+					const body = readResponse(bodyChunks, encoding);
 					record.code = body.code;
 					record.request_id = body.request_id || record.request_id;
 					record.resultCount = body.data?.results?.length;

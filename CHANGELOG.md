@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Validate conditional esports, crypto quote and single-citation parameters in Search and Batch Search. Report missing catalog field names on HTTP 400 while preserving the request ID and keeping upstream bodies private.
 - Repair the duplicated Reddit origin in comment URLs and correct the finance quote parameter example in the node editor.
 - Add live n8n acceptance checks for outgoing requests, returned data, local validation and batch error isolation.
+- Forward explicit JSON format, validate complete capability tags, and verify all documented search fields against the live catalog. Reuse the same domain loader for the operation and the picker.
 
 ## 1.1.2 (2026-11-05)
 

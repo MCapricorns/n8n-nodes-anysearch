@@ -9,7 +9,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createModelServer } from '../test/e2e/model-server.mjs';
 import { runFaultWorkflows } from '../test/e2e/fault-workflows.mjs';
-import { addCapabilityChecks, checkCapabilityRequests } from '../test/e2e/capability-checks.mjs';
+import {
+	addCapabilityChecks,
+	checkCapabilityRequests,
+	checkCatalogRequests,
+} from '../test/e2e/capability-checks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageRoot = path.resolve(process.env.ANYSEARCH_E2E_PACKAGE || root);
@@ -100,6 +104,8 @@ function executionFrom(stdout) {
 	throw new Error('n8n did not return execution JSON');
 }
 const modelServer = capabilityOnly ? undefined : await createModelServer();
+const catalogRequests = new Map();
+const catalogFile = process.env.ANYSEARCH_E2E_CASES;
 const tests = [];
 const nodes = [
 	{
@@ -125,343 +131,395 @@ function add(name, parameters, credential = 'valid', check = () => {}) {
 	};
 	nodes.push(node);
 	connections.Start.main[0].push({ node: name, type: 'main', index: 0 });
-	tests.push({ name, parameters, credential, check });
+	tests.push({ name, check });
 }
-function searchCheck(items, max = 2) {
-	assert.equal(items.length, 1);
-	assert.equal(typeof items[0].json.request_id, 'string');
-	assert(Array.isArray(items[0].json.results));
-	assert(items[0].json.results.length > 0 && items[0].json.results.length <= max);
-}
-add(
-	'Authenticated Search',
-	{
-		resource: 'search',
-		operation: 'search',
-		query: 'What is the capital of France?',
-		options: { maxResults: 2, simplify: false },
-	},
-	'valid',
-	searchCheck,
-);
-add(
-	'Anonymous Search',
-	{
-		resource: 'search',
-		operation: 'search',
-		query: 'n8n community nodes',
-		options: { maxResults: 2, simplify: false },
-	},
-	null,
-	searchCheck,
-);
-add(
-	'Blank Key Search',
-	{
-		resource: 'search',
-		operation: 'search',
-		query: 'n8n optional credentials documentation',
-		options: { maxResults: 2, simplify: false },
-	},
-	'blank',
-	searchCheck,
-);
-add(
-	'Invalid Key',
-	{ resource: 'search', operation: 'search', query: 'n8n', options: { maxResults: 1 } },
-	'invalid',
-	(items) => {
-		assert(items[0].json.error);
-		assert.equal(items[0].json.details.http_status, 401);
-	},
-);
-add(
-	'Invalid Domain Credentials',
-	{ resource: 'capability', operation: 'getDomains' },
-	'invalid',
-	(items) => {
-		assert.equal(items[0].json.details.http_status, 401);
-	},
-);
-add('Domains', { resource: 'capability', operation: 'getDomains' }, 'valid', (items) => {
-	assert(items.length > 0);
-	assert(items.every((item) => typeof item.json.domain === 'string'));
-});
-add(
-	'Subdomains',
-	{
-		resource: 'capability',
-		operation: 'getSubDomains',
-		domains: [
-			'academic',
-			'agriculture',
-			'business',
-			'code',
-			'energy',
-			'environment',
-			'film',
-			'finance',
-			'gaming',
-			'general',
-			'health',
-			'ip',
-			'legal',
-			'resource',
-			'security',
-			'social_media',
-			'travel',
+async function addStandardTests() {
+	function searchCheck(items, max = 2) {
+		assert.equal(items.length, 1);
+		assert.equal(typeof items[0].json.request_id, 'string');
+		assert(Array.isArray(items[0].json.results));
+		assert(items[0].json.results.length > 0 && items[0].json.results.length <= max);
+	}
+	add(
+		'Authenticated Search',
+		{
+			resource: 'search',
+			operation: 'search',
+			query: 'What is the capital of France?',
+			options: { maxResults: 2, simplify: false },
+		},
+		'valid',
+		searchCheck,
+	);
+	add(
+		'Anonymous Search',
+		{
+			resource: 'search',
+			operation: 'search',
+			query: 'n8n community nodes',
+			options: { maxResults: 2, simplify: false },
+		},
+		null,
+		searchCheck,
+	);
+	add(
+		'Blank Key Search',
+		{
+			resource: 'search',
+			operation: 'search',
+			query: 'n8n optional credentials documentation',
+			options: { maxResults: 2, simplify: false },
+		},
+		'blank',
+		searchCheck,
+	);
+	add(
+		'Invalid Key',
+		{ resource: 'search', operation: 'search', query: 'n8n', options: { maxResults: 1 } },
+		'invalid',
+		(items) => {
+			assert(items[0].json.error);
+			assert.equal(items[0].json.details.http_status, 401);
+		},
+	);
+	add(
+		'Invalid Domain Credentials',
+		{ resource: 'capability', operation: 'getDomains' },
+		'invalid',
+		(items) => {
+			assert.equal(items[0].json.details.http_status, 401);
+		},
+	);
+	add('Domains', { resource: 'capability', operation: 'getDomains' }, 'valid', (items) => {
+		assert(items.length > 0);
+		assert(items.every((item) => typeof item.json.domain === 'string'));
+	});
+	add(
+		'Subdomains',
+		{
+			resource: 'capability',
+			operation: 'getSubDomains',
+			domains: [
+				'academic',
+				'agriculture',
+				'business',
+				'code',
+				'energy',
+				'environment',
+				'film',
+				'finance',
+				'gaming',
+				'general',
+				'health',
+				'ip',
+				'legal',
+				'resource',
+				'security',
+				'social_media',
+				'travel',
+			],
+		},
+		'valid',
+		(items) => {
+			assert.equal(items.length, 17);
+			assert(items.every((item) => Array.isArray(item.json.sub_domains)));
+		},
+	);
+	add(
+		'Extract HTML',
+		{ resource: 'extract', operation: 'extract', url: 'https://example.com' },
+		'valid',
+		(items) => {
+			assert.match(items[0].json.content ?? '', /example|documentation/i);
+			assert(items[0].json.request_id);
+		},
+	);
+	add(
+		'Invalid URL',
+		{ resource: 'extract', operation: 'extract', url: 'https://user:password@example.com' },
+		'valid',
+		(items) => {
+			assert.match(items[0].json.error, /embedded credentials/);
+		},
+	);
+	add(
+		'Batch Search',
+		{
+			resource: 'search',
+			operation: 'batchSearch',
+			queries: JSON.stringify([
+				{
+					query: 'React useEffect cleanup',
+					tag: 'code.doc',
+					params: { library: 'react' },
+					max_results: 1,
+				},
+				{ query: '' },
+				{
+					query: 'Apple stock price',
+					tag: 'finance.quote',
+					params: { type: 'stock', symbol: 'AAPL' },
+					max_results: 1,
+				},
+			]),
+		},
+		'valid',
+		(items) => {
+			assert.equal(items.length, 3);
+			assert(items[0].json.results?.length);
+			assert(items[1].json.error);
+			assert(items[2].json.results?.length);
+			assert.deepEqual(
+				items.map((item) => item.json.query_index ?? item.json.details.query_index),
+				[0, 1, 2],
+			);
+		},
+	);
+	for (const [name, url, pattern] of [
+		['Extract Text', 'https://www.rfc-editor.org/rfc/rfc8259.txt', /JavaScript Object Notation/i],
+		['Extract JSON', 'https://raw.githubusercontent.com/n8n-io/n8n/master/package.json', /n8n/],
+		[
+			'Extract Markdown',
+			'https://raw.githubusercontent.com/anysearch-ai/anysearch-skill/main/README.md',
+			/AnySearch/,
 		],
-	},
-	'valid',
-	(items) => {
-		assert.equal(items.length, 17);
-		assert(items.every((item) => Array.isArray(item.json.sub_domains)));
-	},
-);
-add(
-	'Extract HTML',
-	{ resource: 'extract', operation: 'extract', url: 'https://example.com' },
-	'valid',
-	(items) => {
-		assert.match(items[0].json.content ?? '', /example|documentation/i);
-		assert(items[0].json.request_id);
-	},
-);
-add(
-	'Invalid URL',
-	{ resource: 'extract', operation: 'extract', url: 'https://user:password@example.com' },
-	'valid',
-	(items) => {
-		assert.match(items[0].json.error, /embedded credentials/);
-	},
-);
-add(
-	'Batch Search',
-	{
-		resource: 'search',
-		operation: 'batchSearch',
-		queries: JSON.stringify([
-			{
-				query: 'React useEffect cleanup',
-				tag: 'code.doc',
-				params: { library: 'react' },
-				max_results: 1,
+	])
+		add(name, { resource: 'extract', operation: 'extract', url }, 'valid', (items) => {
+			assert.match(items[0].json.content ?? '', pattern);
+			assert(items[0].json.request_id);
+		});
+	for (const [format, url] of [
+		['HTML', 'https://www.rfc-editor.org/rfc/rfc9110.html'],
+		['Text', 'https://www.rfc-editor.org/rfc/rfc9110.txt'],
+		[
+			'JSON',
+			'https://raw.githubusercontent.com/microsoft/TypeScript/v5.9.3/src/compiler/diagnosticMessages.json',
+		],
+		[
+			'Markdown',
+			'https://raw.githubusercontent.com/EbookFoundation/free-programming-books/main/books/free-programming-books-langs.md',
+		],
+	])
+		add('Long ' + format, { resource: 'extract', operation: 'extract', url }, 'valid', (items) => {
+			const content = items[0].json.content ?? '';
+			const size = Array.from(content).length;
+			if (format === 'HTML') {
+				assert(size > 0 && size <= 50000);
+				assert.match(content, /\.\.\.\(content truncated\)\s*$/);
+			} else {
+				assert.equal(size, 50000);
+			}
+			assert(items[0].json.request_id);
+		});
+	add(
+		'Unsupported Extract',
+		{
+			resource: 'extract',
+			operation: 'extract',
+			url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+		},
+		'valid',
+		(items) => {
+			assert(items[0].json.error);
+			assert([400, 422].includes(items[0].json.details.http_status));
+		},
+	);
+	if (catalogFile) {
+		const cases = JSON.parse(await fs.readFile(catalogFile, 'utf8'));
+		const dateAfter = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+		for (const entry of cases) {
+			if (entry.tag === 'travel.flight') {
+				entry.params.date = dateAfter(30);
+				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
+			}
+			if (entry.tag === 'travel.flight_status' && entry.params?.date)
+				entry.params.date = dateAfter(0);
+		}
+		for (let index = 0; index < cases.length; index += 5) {
+			const group = cases.slice(index, index + 5);
+			add(
+				'Catalog ' + (index / 5 + 1),
+				{ resource: 'search', operation: 'batchSearch', queries: JSON.stringify(group) },
+				'valid',
+				(items) => {
+					assert.equal(items.length, group.length);
+					for (let item = 0; item < items.length; item++) {
+						assert(!items[item].json.error, group[item].tag + ': ' + items[item].json.error);
+						assert(Array.isArray(items[item].json.results));
+						assert.equal(items[item].json.query_index, item);
+						assert(items[item].json.request_id);
+						catalogRequests.set(items[item].json.request_id, group[item]);
+					}
+				},
+			);
+		}
+	}
+	nodes.push(
+		{
+			id: 'agent',
+			name: 'AI Agent',
+			type: '@n8n/n8n-nodes-langchain.agent',
+			typeVersion: 3.1,
+			position: [1000, 0],
+			parameters: {
+				promptType: 'define',
+				text: 'Find the capital of France using the search tool.',
+				options: { maxIterations: 3 },
 			},
-			{ query: '' },
-			{
-				query: 'Apple stock price',
-				tag: 'finance.quote',
-				params: { type: 'stock', symbol: 'AAPL' },
-				max_results: 1,
+			onError: 'continueRegularOutput',
+		},
+		{
+			id: 'model',
+			name: 'Local Test Model',
+			type: '@n8n/n8n-nodes-langchain.lmChatOpenAi',
+			typeVersion: 1.2,
+			position: [1000, 200],
+			parameters: {
+				model: { __rl: true, mode: 'id', value: 'e2e-model' },
+				options: { baseURL: modelServer.url, maxRetries: 0, timeout: 30000 },
 			},
-		]),
-	},
-	'valid',
-	(items) => {
-		assert.equal(items.length, 3);
-		assert(items[0].json.results?.length);
-		assert(items[1].json.error);
-		assert(items[2].json.results?.length);
-		assert.deepEqual(
-			items.map((item) => item.json.query_index ?? item.json.details.query_index),
-			[0, 1, 2],
-		);
-	},
-);
-for (const [name, url, pattern] of [
-	['Extract Text', 'https://www.rfc-editor.org/rfc/rfc8259.txt', /JavaScript Object Notation/i],
-	['Extract JSON', 'https://raw.githubusercontent.com/n8n-io/n8n/master/package.json', /n8n/],
-	[
-		'Extract Markdown',
-		'https://raw.githubusercontent.com/anysearch-ai/anysearch-skill/main/README.md',
-		/AnySearch/,
-	],
-])
-	add(name, { resource: 'extract', operation: 'extract', url }, 'valid', (items) => {
-		assert.match(items[0].json.content ?? '', pattern);
-		assert(items[0].json.request_id);
+			credentials: { openAiApi: { id: 'local-model', name: 'local-model' } },
+		},
+		{
+			id: 'tool',
+			name: 'Search Tool',
+			type: 'n8n-nodes-anysearch.anySearchTool',
+			typeVersion: 1,
+			position: [1200, 200],
+			parameters: {
+				resource: 'search',
+				operation: 'search',
+				query: "={{ $fromAI('query', 'Search query', 'string') }}",
+				options: { maxResults: 1, simplify: false },
+			},
+			credentials: { anySearchApi: { id: 'valid', name: 'valid' } },
+		},
+		{
+			id: 'input-queries',
+			name: 'Input Queries',
+			type: 'n8n-nodes-base.set',
+			typeVersion: 3.4,
+			position: [1500, 0],
+			parameters: {
+				mode: 'raw',
+				jsonOutput: JSON.stringify({
+					queries: [{ query: 'n8n workflow documentation' }, { query: 'TypeScript documentation' }],
+				}),
+				options: {},
+			},
+		},
+		{
+			id: 'split-inputs',
+			name: 'Split Inputs',
+			type: 'n8n-nodes-base.splitOut',
+			typeVersion: 1,
+			position: [1700, 0],
+			parameters: { fieldToSplitOut: 'queries', options: { destinationFieldName: 'entry' } },
+		},
+		{
+			id: 'item-search',
+			name: 'Item Search',
+			type: 'n8n-nodes-anysearch.anySearch',
+			typeVersion: 1,
+			position: [1900, 0],
+			parameters: {
+				resource: 'search',
+				operation: 'search',
+				query: '={{ $json.entry.query }}',
+				options: { maxResults: 1 },
+			},
+			credentials: { anySearchApi: { id: 'valid', name: 'valid' } },
+		},
+		{
+			id: 'linked-results',
+			name: 'Linked Results',
+			type: 'n8n-nodes-base.set',
+			typeVersion: 3.4,
+			position: [2100, 0],
+			parameters: {
+				assignments: {
+					assignments: [
+						{
+							id: 'source-query',
+							name: 'sourceQuery',
+							value: '={{ $("Split Inputs").item.json.entry.query }}',
+							type: 'string',
+						},
+					],
+				},
+				includeOtherFields: true,
+				options: {},
+			},
+		},
+	);
+	connections.Start.main[0].push(
+		{ node: 'AI Agent', type: 'main', index: 0 },
+		{ node: 'Input Queries', type: 'main', index: 0 },
+	);
+	connections['Local Test Model'] = {
+		ai_languageModel: [[{ node: 'AI Agent', type: 'ai_languageModel', index: 0 }]],
+	};
+	connections['Search Tool'] = { ai_tool: [[{ node: 'AI Agent', type: 'ai_tool', index: 0 }]] };
+	connections['Input Queries'] = { main: [[{ node: 'Split Inputs', type: 'main', index: 0 }]] };
+	connections['Split Inputs'] = { main: [[{ node: 'Item Search', type: 'main', index: 0 }]] };
+	connections['Item Search'] = { main: [[{ node: 'Linked Results', type: 'main', index: 0 }]] };
+	tests.push({
+		name: 'AI Agent',
+		check: (items) => {
+			assert.match(items[0].json.output ?? '', /Paris/i);
+			assert(modelServer.state.toolResultSeen);
+		},
 	});
-for (const [format, url] of [
-	['HTML', 'https://www.rfc-editor.org/rfc/rfc9110.html'],
-	['Text', 'https://www.rfc-editor.org/rfc/rfc9110.txt'],
-	[
-		'JSON',
-		'https://raw.githubusercontent.com/microsoft/TypeScript/v5.9.3/src/compiler/diagnosticMessages.json',
-	],
-	[
-		'Markdown',
-		'https://raw.githubusercontent.com/EbookFoundation/free-programming-books/main/books/free-programming-books-langs.md',
-	],
-])
-	add('Long ' + format, { resource: 'extract', operation: 'extract', url }, 'valid', (items) => {
-		assert.equal(Array.from(items[0].json.content ?? '').length, 50000);
-		assert(items[0].json.request_id);
+	tests.push({
+		name: 'Linked Results',
+		check: (items) => {
+			assert.deepEqual(
+				items.map((item) => item.json.sourceQuery),
+				['n8n workflow documentation', 'TypeScript documentation'],
+			);
+			assert(items.every((item) => item.json.request_id));
+		},
 	});
-add(
-	'Unsupported Extract',
-	{
-		resource: 'extract',
-		operation: 'extract',
-		url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-	},
-	'valid',
-	(items) => {
-		assert(items[0].json.error);
-		assert([400, 422].includes(items[0].json.details.http_status));
-	},
-);
-if (!capabilityOnly && process.env.ANYSEARCH_E2E_CASES) {
-	const cases = JSON.parse(await fs.readFile(process.env.ANYSEARCH_E2E_CASES, 'utf8'));
-	for (const entry of cases)
-		if (entry.tag === 'travel.flight')
-			entry.params.date = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-	for (let index = 0; index < cases.length; index += 5) {
-		const group = cases.slice(index, index + 5);
-		add(
-			'Catalog ' + (index / 5 + 1),
-			{ resource: 'search', operation: 'batchSearch', queries: JSON.stringify(group) },
-			'valid',
-			(items) => {
-				assert.equal(items.length, group.length);
-				for (let item = 0; item < items.length; item++) {
-					assert(!items[item].json.error, group[item].tag + ': ' + items[item].json.error);
-					assert(Array.isArray(items[item].json.results));
-				}
-			},
+}
+
+if (!capabilityOnly) await addStandardTests();
+addCapabilityChecks(add, apiKey ? 'valid' : null);
+async function importCredentials() {
+	const coreRoot = path.dirname(engineRequire.resolve('n8n-core/package.json'));
+	const { CipherAes256CBC } = engineRequire(path.join(coreRoot, 'dist/encryption/aes-256-cbc.js'));
+	const cipher = new CipherAes256CBC();
+	function credential(id, type, data, key = encryptionKey) {
+		return { id, name: id, type, data: cipher.encrypt(JSON.stringify(data), key) };
+	}
+	const credentials = [credential('valid', 'anySearchApi', { apiKey })];
+	if (!capabilityOnly) {
+		credentials.push(
+			credential('blank', 'anySearchApi', { apiKey: '' }),
+			credential('invalid', 'anySearchApi', { apiKey: 'synthetic_invalid_key' }),
+			credential(
+				'unreadable',
+				'anySearchApi',
+				{ apiKey: 'fixture' },
+				randomBytes(32).toString('hex'),
+			),
+			credential('local-model', 'openAiApi', {
+				apiKey: 'synthetic-local-model',
+				url: modelServer.url,
+			}),
 		);
 	}
+	const filename = path.join(work, 'credential-import.json');
+	await fs.writeFile(filename, JSON.stringify(credentials), { mode: 0o600 });
+	try {
+		const result = await invoke(['import:credentials', '--input=' + filename]);
+		const log = redact(result.stdout + result.stderr);
+		await fs.writeFile(path.join(output, 'credential-import.log'), log);
+		assert.equal(result.code, 0, log);
+	} finally {
+		await fs.rm(filename);
+	}
 }
-nodes.push(
-	{
-		id: 'agent',
-		name: 'AI Agent',
-		type: '@n8n/n8n-nodes-langchain.agent',
-		typeVersion: 3.1,
-		position: [1000, 0],
-		parameters: {
-			promptType: 'define',
-			text: 'Find the capital of France using the search tool.',
-			options: { maxIterations: 3 },
-		},
-		onError: 'continueRegularOutput',
-	},
-	{
-		id: 'model',
-		name: 'Local Test Model',
-		type: '@n8n/n8n-nodes-langchain.lmChatOpenAi',
-		typeVersion: 1.2,
-		position: [1000, 200],
-		parameters: {
-			model: { __rl: true, mode: 'id', value: 'e2e-model' },
-			options: { baseURL: modelServer?.url, maxRetries: 0, timeout: 30000 },
-		},
-		credentials: { openAiApi: { id: 'local-model', name: 'local-model' } },
-	},
-	{
-		id: 'tool',
-		name: 'Search Tool',
-		type: 'n8n-nodes-anysearch.anySearchTool',
-		typeVersion: 1,
-		position: [1200, 200],
-		parameters: {
-			resource: 'search',
-			operation: 'search',
-			query: "={{ $fromAI('query', 'Search query', 'string') }}",
-			options: { maxResults: 1, simplify: false },
-		},
-		credentials: { anySearchApi: { id: 'valid', name: 'valid' } },
-	},
-	{
-		id: 'input-queries',
-		name: 'Input Queries',
-		type: 'n8n-nodes-base.set',
-		typeVersion: 3.4,
-		position: [1500, 0],
-		parameters: {
-			mode: 'raw',
-			jsonOutput: JSON.stringify({
-				queries: [{ query: 'n8n workflow documentation' }, { query: 'TypeScript documentation' }],
-			}),
-			options: {},
-		},
-	},
-	{
-		id: 'split-inputs',
-		name: 'Split Inputs',
-		type: 'n8n-nodes-base.splitOut',
-		typeVersion: 1,
-		position: [1700, 0],
-		parameters: { fieldToSplitOut: 'queries', options: { destinationFieldName: 'entry' } },
-	},
-	{
-		id: 'item-search',
-		name: 'Item Search',
-		type: 'n8n-nodes-anysearch.anySearch',
-		typeVersion: 1,
-		position: [1900, 0],
-		parameters: {
-			resource: 'search',
-			operation: 'search',
-			query: '={{ $json.entry.query }}',
-			options: { maxResults: 1 },
-		},
-		credentials: { anySearchApi: { id: 'valid', name: 'valid' } },
-	},
-	{
-		id: 'linked-results',
-		name: 'Linked Results',
-		type: 'n8n-nodes-base.set',
-		typeVersion: 3.4,
-		position: [2100, 0],
-		parameters: {
-			assignments: {
-				assignments: [
-					{
-						id: 'source-query',
-						name: 'sourceQuery',
-						value: '={{ $("Split Inputs").item.json.entry.query }}',
-						type: 'string',
-					},
-				],
-			},
-			includeOtherFields: true,
-			options: {},
-		},
-	},
-);
-connections.Start.main[0].push(
-	{ node: 'AI Agent', type: 'main', index: 0 },
-	{ node: 'Input Queries', type: 'main', index: 0 },
-);
-connections['Local Test Model'] = {
-	ai_languageModel: [[{ node: 'AI Agent', type: 'ai_languageModel', index: 0 }]],
-};
-connections['Search Tool'] = { ai_tool: [[{ node: 'AI Agent', type: 'ai_tool', index: 0 }]] };
-connections['Input Queries'] = { main: [[{ node: 'Split Inputs', type: 'main', index: 0 }]] };
-connections['Split Inputs'] = { main: [[{ node: 'Item Search', type: 'main', index: 0 }]] };
-connections['Item Search'] = { main: [[{ node: 'Linked Results', type: 'main', index: 0 }]] };
-tests.push({
-	name: 'AI Agent',
-	check: (items) => {
-		assert.match(items[0].json.output ?? '', /Paris/i);
-		assert(modelServer.state.toolResultSeen);
-	},
-});
-tests.push({
-	name: 'Linked Results',
-	check: (items) => {
-		assert.deepEqual(
-			items.map((item) => item.json.sourceQuery),
-			['n8n workflow documentation', 'TypeScript documentation'],
-		);
-		assert(items.every((item) => item.json.request_id));
-	},
-});
 
-const standardTestCount = tests.length;
-addCapabilityChecks(add, apiKey ? 'valid' : null);
-const selectedTests = capabilityOnly ? tests.slice(standardTestCount) : tests;
-const selectedNames = new Set(selectedTests.map((test) => test.name));
 const summary = {
 	startedAt: new Date().toISOString(),
 	n8n: version,
@@ -485,68 +543,13 @@ try {
 		path.join(modules, 'n8n-workflow'),
 		'junction',
 	);
-	const coreRoot = path.dirname(engineRequire.resolve('n8n-core/package.json'));
-	const { CipherAes256CBC } = engineRequire(path.join(coreRoot, 'dist/encryption/aes-256-cbc.js'));
-	const cipher = new CipherAes256CBC();
-	const credentialFile = path.join(work, 'credential-import.json');
-	await fs.writeFile(
-		credentialFile,
-		JSON.stringify(
-			[
-				['valid', apiKey],
-				['blank', ''],
-				['invalid', 'synthetic_invalid_key'],
-			]
-				.map(([id, key]) => ({
-					id,
-					name: id,
-					type: 'anySearchApi',
-					data: cipher.encrypt(JSON.stringify({ apiKey: key }), encryptionKey),
-				}))
-				.concat([
-					{
-						id: 'unreadable',
-						name: 'unreadable',
-						type: 'anySearchApi',
-						data: cipher.encrypt(
-							JSON.stringify({ apiKey: 'fixture' }),
-							randomBytes(32).toString('hex'),
-						),
-					},
-					{
-						id: 'local-model',
-						name: 'local-model',
-						type: 'openAiApi',
-						data: cipher.encrypt(
-							JSON.stringify({ apiKey: 'synthetic-local-model', url: modelServer?.url }),
-							encryptionKey,
-						),
-					},
-				]),
-		),
-		{ mode: 0o600 },
-	);
-	const credentialImport = await invoke(['import:credentials', '--input=' + credentialFile]);
-	await fs.rm(credentialFile);
-	await fs.writeFile(
-		path.join(output, 'credential-import.log'),
-		redact(credentialImport.stdout + credentialImport.stderr),
-	);
-	assert.equal(credentialImport.code, 0, credentialImport.stderr + credentialImport.stdout);
+	if (apiKey) await importCredentials();
 	const workflow = {
 		id: 'AnySearchE2E0001',
 		name: 'AnySearch end-to-end',
 		active: false,
-		nodes: capabilityOnly
-			? nodes.filter((node) => node.id === 'start' || selectedNames.has(node.name))
-			: nodes,
-		connections: capabilityOnly
-			? {
-					Start: {
-						main: [connections.Start.main[0].filter((link) => selectedNames.has(link.node))],
-					},
-				}
-			: connections,
+		nodes,
+		connections,
 		settings: { executionOrder: 'v1' },
 	};
 	const workflowFile = path.join(work, 'workflow.json');
@@ -589,7 +592,7 @@ try {
 	summary.workflowId = workflow.id;
 	summary.executionStatus = data.status;
 	const runData = data.data.resultData.runData;
-	for (const test of selectedTests) {
+	for (const test of tests) {
 		const record = { name: test.name };
 		try {
 			const runs = runData[test.name];
@@ -643,6 +646,30 @@ try {
 	);
 	checkCapabilityRequests(summary.requests, summary.tests);
 	if (!capabilityOnly) {
+		const authenticatedId = summary.tests.find((test) => test.name === 'Authenticated Search')
+			?.results?.[0]?.request_id;
+		const authenticated = summary.requests.find(
+			(request) => request.request_id === authenticatedId,
+		);
+		assert.equal(
+			authenticated?.authorizationPresent,
+			true,
+			'Missing Bearer header on authenticated search',
+		);
+		assert.equal(authenticated.status, 200);
+		if (catalogFile) {
+			const domains = runData.Subdomains.at(-1).data.main[0].map((item) => item.json);
+			summary.catalogCoverage = checkCatalogRequests(catalogRequests, summary.requests, domains);
+			if (path.resolve(catalogFile) === path.join(root, 'test/e2e/search-cases.json')) {
+				const listed = runData.Domains.at(-1).data.main[0].map((item) => item.json.domain);
+				assert.deepEqual(domains.map((item) => item.domain).sort(), listed.sort());
+				assert.deepEqual(
+					summary.catalogCoverage.missing,
+					[],
+					'Live catalog fields missing from the matrix',
+				);
+			}
+		}
 		for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
 			const requests = summary.requests.filter((request) => request.body?.query === query);
 			assert.equal(requests.length, 1);

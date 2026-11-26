@@ -19,10 +19,8 @@ const REDDIT_ORIGIN = 'https://www.reddit.com';
 const sanitizedErrors = new WeakSet<Error>();
 
 interface AnySearchEnvelope {
-	code: number;
-	message?: string;
 	request_id?: string;
-	data?: IDataObject;
+	data: unknown;
 }
 
 type AnySearchRequestContext = IExecuteFunctions | ILoadOptionsFunctions;
@@ -210,7 +208,7 @@ function validateEnvelope(node: INode, response: unknown, requestId?: string): A
 			requestId,
 		);
 	}
-	return { ...value, code: value.code, request_id: requestId } as AnySearchEnvelope;
+	return { data: value.data, request_id: requestId };
 }
 
 function readDataObject(node: INode, envelope: AnySearchEnvelope, operation: string): IDataObject {
@@ -299,10 +297,12 @@ function searchBody(node: INode, value: unknown): IDataObject {
 	if (body.zone && !['cn', 'intl'].includes(body.zone as string)) {
 		throw new NodeOperationError(node, 'Zone must be cn or intl');
 	}
+	if (typeof body.tag === 'string' && !/^[^.\s]+\.[^.\s]+$/.test(body.tag)) {
+		throw new NodeOperationError(node, 'Capability Tag must be a complete domain.sub_domain tag');
+	}
 	if (body.format && !['json', 'markdown'].includes(body.format as string)) {
 		throw new NodeOperationError(node, 'Response Format must be json or markdown');
 	}
-	if (body.format === 'json') delete body.format;
 	const params =
 		input.params !== undefined && input.params !== ''
 			? parseJsonObjectParameter(node, input.params, 'Tag Parameters')
@@ -393,7 +393,7 @@ async function batchSearchOperation(
 			'Queries must contain between 1 and 5 search objects',
 		);
 	}
-	return await Promise.all(
+	return Promise.all(
 		queries.map(async (query: unknown, queryIndex: number) => {
 			const identity = { query: objectValue(query)?.query ?? '', query_index: queryIndex };
 			try {
@@ -453,23 +453,15 @@ async function extractOperation(
 	];
 }
 
-async function capabilityOperation(
-	this: IExecuteFunctions,
-	itemIndex: number,
-	operation: string,
-): Promise<INodeExecutionData[]> {
+async function fetchDomains(
+	this: AnySearchRequestContext,
+	selected?: string[],
+): Promise<{ domains: IDataObject[]; requestId?: string }> {
 	let endpoint = '/v1/domains';
-	if (operation === 'getSubDomains') {
-		const domains = toStringArray(
-			this.getNode(),
-			this.getNodeParameter('domains', itemIndex, []),
-			'Domain Names or IDs',
-		);
+	if (selected) {
 		const searchParams = new URLSearchParams();
-		for (const domain of domains) searchParams.append('domain', domain);
+		for (const domain of selected) searchParams.append('domain', domain);
 		endpoint = '/v1/sub-domains?' + searchParams.toString();
-	} else if (operation !== 'getDomains') {
-		throw new NodeOperationError(this.getNode(), 'Unknown capability operation');
 	}
 	const envelope = await anySearchRequest.call(this, {
 		method: 'GET',
@@ -488,7 +480,7 @@ async function capabilityOperation(
 			(domain) =>
 				typeof domain.domain !== 'string' ||
 				!domain.domain ||
-				(operation === 'getSubDomains' &&
+				(selected &&
 					(!Array.isArray(domain.sub_domains) ||
 						domain.sub_domains.some(
 							(entry) => typeof objectValue(entry)?.sub_domain !== 'string',
@@ -501,8 +493,28 @@ async function capabilityOperation(
 			envelope.request_id,
 		);
 	}
+	return { domains, requestId: envelope.request_id };
+}
+
+async function capabilityOperation(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	operation: string,
+): Promise<INodeExecutionData[]> {
+	if (operation !== 'getDomains' && operation !== 'getSubDomains') {
+		throw new NodeOperationError(this.getNode(), 'Unknown capability operation');
+	}
+	const selected =
+		operation === 'getSubDomains'
+			? toStringArray(
+					this.getNode(),
+					this.getNodeParameter('domains', itemIndex, []),
+					'Domain Names or IDs',
+				)
+			: undefined;
+	const { domains, requestId } = await fetchDomains.call(this, selected);
 	return domains.map((domain) => ({
-		json: { ...domain, ...(envelope.request_id ? { request_id: envelope.request_id } : {}) },
+		json: { ...domain, ...(requestId ? { request_id: requestId } : {}) },
 		pairedItem: { item: itemIndex },
 	}));
 }
@@ -512,28 +524,10 @@ export class AnySearch implements INodeType {
 		loadOptions: {
 			// Get all capability domains for pickers (does not consume quota).
 			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const envelope = await anySearchRequest.call(this, {
-					method: 'GET',
-					url: `${API_BASE_URL}/v1/domains`,
-				});
-				const data = readDataObject(this.getNode(), envelope, 'capability');
-				const domains = readArrayField(
-					this.getNode(),
-					data,
-					'domains',
-					'capability',
-					envelope.request_id,
-				);
-				if (domains.some((domain) => typeof domain.domain !== 'string' || !domain.domain)) {
-					throw apiError(
-						this.getNode(),
-						'AnySearch capability response contains invalid domain names.',
-						envelope.request_id,
-					);
-				}
+				const { domains } = await fetchDomains.call(this);
 				return domains.map((domain) => ({
-					value: String(domain.domain ?? ''),
-					name: `${String(domain.domain ?? '')} — ${String(domain.description ?? '')}`,
+					value: String(domain.domain),
+					name: `${String(domain.domain)} — ${String(domain.description ?? '')}`,
 				}));
 			},
 		},
