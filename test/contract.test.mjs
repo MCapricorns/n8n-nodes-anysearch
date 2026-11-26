@@ -602,6 +602,160 @@ test('search forwards capability parameters without dropping empty required valu
 	}
 });
 
+test('Search and Batch Search fill only documented defaults without changing input objects', async () => {
+	const examples = [
+		['travel.flight_status', { flight_number: 'CA981' }, { departure: '' }],
+		['travel.flight_status', { flight_number: 'CA981', departure: 'PEK' }, {}],
+		['finance.fundamental', { type: 'overview', symbol: 'AAPL' }, { cn_code: '' }],
+		['finance.fundamental', { type: 'overview' }, { cn_code: '', symbol: '' }],
+		...['income', 'balance', 'cashflow', 'indicator', 'holder'].map((type) => [
+			'finance.fundamental',
+			{ type, cn_code: '600519.SH' },
+			{ symbol: '' },
+		]),
+		['finance.fundamental', { type: 'income', cn_code: '600519.SH', symbol: 'explicit' }, {}],
+		['finance.calendar', { type: 'earnings' }, { period: '90d' }],
+		['finance.calendar', { type: 'earnings', period: '7d' }, {}],
+		['finance.calendar', { type: 'dividends' }, {}],
+		['travel.flight', { departure: 'PEK' }, {}],
+		['gaming.esports', { type: 'champion_rotation' }, {}],
+		['finance.fundamental', { type: 'new_type' }, {}],
+		['future.tag', { type: 'player', optional: false }, {}],
+	];
+	for (const [tag, input, defaults] of examples) {
+		const params = Object.freeze(input);
+		for (const parameters of [
+			{ options: { tag, params: JSON.stringify(params) } },
+			{ operation: 'batchSearch', queries: [{ query: 'test', tag, params }] },
+		]) {
+			const r = await runCase({ parameters });
+			assert.equal(r.requests.length, 1, tag);
+			assert.deepEqual(r.requests[0].body.params, { ...defaults, ...params });
+		}
+	}
+});
+
+test('undefined fields in expression objects still receive their wire defaults', async () => {
+	for (const [tag, params, expected] of [
+		[
+			'travel.flight_status',
+			{ flight_number: 'CA981', departure: undefined },
+			{ flight_number: 'CA981', departure: '' },
+		],
+		[
+			'finance.fundamental',
+			{ type: 'overview', cn_code: undefined, symbol: undefined },
+			{ type: 'overview', cn_code: '', symbol: '' },
+		],
+	]) {
+		const r = await runCase({ parameters: { options: { tag, params } } });
+		assert.deepEqual(r.requests[0].body.params, expected);
+	}
+});
+
+test('conditional fields and blank required values fail locally with their field names', async () => {
+	const examples = [
+		...['player', 'ranked', 'mastery', 'live_game'].flatMap((type) => [
+			['gaming.esports', { type, game_name: 'Hide on Bush#KR1', region: ' ' }, 'region'],
+			['gaming.esports', { type, region: 'kr' }, 'game_name'],
+		]),
+		['gaming.esports', { type: 'leaderboard' }, 'region'],
+		['gaming.esports', { type: 'leaderboard', region: 'kr', division: 'I' }, 'tier'],
+		[
+			'gaming.esports',
+			{ type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
+			'division',
+		],
+		['gaming.esports', { type: ' player ', game_name: 'Hide on Bush#KR1' }, 'region'],
+		['gaming.esports', { type: 'match_detail', match_id: null }, 'match_id'],
+		['finance.quote', { type: 'crypto', symbol: false }, 'symbol'],
+		['finance.fundamental', { type: 'income', cn_code: ' ', symbol: '' }, 'cn_code'],
+		['finance.fundamental', { type: 'overview', cn_code: null }, 'cn_code'],
+		['travel.flight_status', { flight_number: '' }, 'flight_number'],
+		['travel.flight_status', { flight_number: 981 }, 'flight_number'],
+		['travel.flight', { departure: '' }, 'departure'],
+		['code.doc', { library: ' ' }, 'library'],
+		['academic.citation', { op: 'citation', id: '10.1038/example' }, 'id'],
+	];
+	for (const [tag, params, field] of examples) {
+		const r = await runCase({ parameters: { options: { tag, params } } });
+		assert.equal(r.outcome, 'error');
+		assert.match(r.message, new RegExp('\\b' + field + '\\b'));
+		assert.equal(r.requests.length, 0);
+	}
+	for (const [tag, params] of [
+		['gaming.esports', { type: 'match_detail', match_id: 'KR_123' }],
+		['gaming.esports', { type: 'leaderboard', region: 'kr' }],
+		['gaming.esports', { type: 'leaderboard', region: 'kr', tier: 'GOLD', division: 'I' }],
+		['finance.quote', { type: 'commodity' }],
+		['academic.citation', { id: 33817056 }],
+		['academic.citation', { op: 'citation', id: '06101801781-06180334099' }],
+	]) {
+		const r = await runCase({ parameters: { options: { tag, params } } });
+		assert.deepEqual(r.requests[0].body.params, params);
+	}
+});
+
+test('catalog HTTP 400 diagnostics survive stopping, continuing, batch output and thrown HTTP errors', async () => {
+	const response = {
+		code: -1,
+		request_id: 'validation-id',
+		message: "Missing required params for tag 'travel.flight': departure, arrival, date.",
+	};
+	const thrown = Object.assign(new Error('transport details'), {
+		response: { status: 400, data: response },
+	});
+	for (const config of [{ statusCode: 400, response }, { response: thrown }]) {
+		for (const opts of [
+			{},
+			{ continueOnFail: true },
+			{ parameters: { operation: 'batchSearch', queries: [{ query: 'test' }] } },
+		]) {
+			const r = await runCase({ ...config, ...opts });
+			const item = r.output?.[0][0].json;
+			assert.match(r.message ?? item.error, /departure, arrival, date/);
+			assert.equal((r.context ?? item.details).request_id, 'validation-id');
+			assert.equal((r.context ?? item.details).http_status, 400);
+		}
+	}
+});
+
+test('unrecognized 400 messages and credential-like fields stay private, including after rerouting', async () => {
+	for (const message of [
+		'Your new password is PRIVATE_UPSTREAM_PASSWORD',
+		"Missing required params for tag 'travel.flight_status': as_sk_private.",
+		"Missing required params for tag 'travel.private': flight_number.",
+		"Missing required params for tag 'travel.flight_status': flight_number.\nPRIVATE_UPSTREAM_PASSWORD",
+	]) {
+		const r = await runCase({
+			statusCode: 400,
+			continueOnFail: true,
+			response: { code: -1, request_id: 'as_sk_private', message },
+			headers: { 'x-request-id': 'safe-header-id' },
+		});
+		const item = r.output[0][0].json;
+		assert.match(item.error, /rejected the parameters/);
+		assert.equal(item.details.request_id, 'safe-header-id');
+		assert(!/private/i.test(JSON.stringify(item)));
+	}
+});
+
+test('search repairs duplicated Reddit origins and preserves paths, empty URLs and other origins', async () => {
+	const origin = 'https://www.reddit.com';
+	const path = '/r/Python/comments/abc/?sort=top#comment';
+	const urls = [origin + origin + path, origin + path, '', origin + 'https://example.com' + path];
+	const results = urls.map((url) => ({ title: '', url, snippet: null }));
+	const r = await runCase({ response: { code: 0, data: { results } } });
+	assert.deepEqual(
+		r.output[0].map((item) => item.json.url),
+		[origin + path, ...urls.slice(1)],
+	);
+	assert.deepEqual(
+		results.map((item) => item.url),
+		urls,
+	);
+});
+
 test('extract preserves Unicode and server truncation boundaries', async () => {
 	const content = '😀'.repeat(49999) + '文';
 	const r = await runCase({

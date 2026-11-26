@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.3 (2026-11-26)
+
+- Supply the documented airport and ticker placeholders for flight status, company overviews and A-share fundamentals. Default earnings calendars to 90 days.
+- Validate conditional esports, crypto quote and single-citation parameters in Search and Batch Search. Report missing catalog field names on HTTP 400 while preserving the request ID and keeping upstream bodies private.
+- Repair the duplicated Reddit origin in comment URLs and correct the finance quote parameter example in the node editor.
+- Add live n8n acceptance checks for outgoing requests, returned data, local validation and batch error isolation.
+
 ## 1.1.2 (2026-11-05)
 
 - Verify REST-only requests and ensure saved Feedback steps cannot send requests in any n8n error mode.

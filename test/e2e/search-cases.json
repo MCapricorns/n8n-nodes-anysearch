@@ -144,8 +144,7 @@
     "query": "upcoming company earnings",
     "tag": "finance.calendar",
     "params": {
-      "type": "earnings",
-      "period": "7d"
+      "type": "earnings"
     },
     "max_results": 1
   },

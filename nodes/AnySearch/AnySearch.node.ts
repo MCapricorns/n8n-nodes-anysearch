@@ -10,10 +10,13 @@ import type {
 	IHttpRequestOptions,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { capabilityParameters, missingParameterMessage } from './capabilityParameters';
 
 const API_BASE_URL = 'https://api.anysearch.com';
 const CREDENTIAL_NAME = 'anySearchApi';
 const REQUEST_TIMEOUT = 60_000;
+const REDDIT_ORIGIN = 'https://www.reddit.com';
+const sanitizedErrors = new WeakSet<Error>();
 
 interface AnySearchEnvelope {
 	code: number;
@@ -60,10 +63,15 @@ function apiError(
 		: new NodeOperationError(node, message, { description });
 	if (requestId) error.context.request_id = requestId;
 	if (httpStatus) error.context.http_status = httpStatus;
+	sanitizedErrors.add(error);
 	return error;
 }
 
-function httpMessage(status: number): string {
+function httpMessage(status: number, body: unknown): string {
+	if (status === 400) {
+		const message = missingParameterMessage(objectValue(body)?.message);
+		if (message) return message;
+	}
 	const messages: Record<number, string> = {
 		400: 'AnySearch rejected the parameters. Check the query, URL, and capability definitions.',
 		401: 'AnySearch authentication was rejected. Check the selected API key.',
@@ -78,18 +86,28 @@ function httpMessage(status: number): string {
 }
 
 function toUpstreamError(node: INode, error: unknown): NodeOperationError | NodeApiError {
+	// n8n's HTTP helpers can also throw NodeApiError. Only reuse our sanitized errors.
+	if (
+		(error instanceof NodeApiError || error instanceof NodeOperationError) &&
+		sanitizedErrors.has(error)
+	)
+		return error;
 	const details = objectValue(error) ?? {};
 	const cause = objectValue(details.cause) ?? {};
 	const response = objectValue(details.response) ?? objectValue(cause.response) ?? {};
-	const body = objectValue(response.data) ?? objectValue(response.body) ?? {};
 	const headers = objectValue(response.headers) ?? {};
 	const context = objectValue(details.context) ?? {};
-	const requestId = safeRequestId(body.request_id ?? headers['x-request-id'] ?? context.request_id);
+	const body =
+		objectValue(response.data) ?? objectValue(response.body) ?? objectValue(context.data) ?? {};
+	const requestId =
+		safeRequestId(body.request_id) ??
+		safeRequestId(headers['x-request-id']) ??
+		safeRequestId(context.request_id);
 	const status = Number(
 		details.httpCode ?? details.statusCode ?? response.status ?? response.statusCode,
 	);
 	if (Number.isInteger(status) && status >= 100 && status <= 599) {
-		return apiError(node, httpMessage(status), requestId, status);
+		return apiError(node, httpMessage(status, body), requestId, status);
 	}
 	return apiError(node, safeMessage(error instanceof Error ? error.message : undefined), requestId);
 }
@@ -153,16 +171,16 @@ async function anySearchRequest(
 	} catch (error) {
 		throw toUpstreamError(this.getNode(), error);
 	}
-	const requestId = safeRequestId(
-		objectValue(response?.body)?.request_id ?? response?.headers?.['x-request-id'],
-	);
+	const requestId =
+		safeRequestId(objectValue(response?.body)?.request_id) ??
+		safeRequestId(response?.headers?.['x-request-id']);
 	if (!Number.isInteger(response?.statusCode)) {
 		throw apiError(this.getNode(), 'AnySearch returned an unexpected HTTP response.', requestId);
 	}
 	if (response.statusCode < 200 || response.statusCode >= 300) {
 		throw apiError(
 			this.getNode(),
-			httpMessage(response.statusCode),
+			httpMessage(response.statusCode, response.body),
 			requestId,
 			response.statusCode,
 		);
@@ -285,9 +303,12 @@ function searchBody(node: INode, value: unknown): IDataObject {
 		throw new NodeOperationError(node, 'Response Format must be json or markdown');
 	}
 	if (body.format === 'json') delete body.format;
-	if (input.params !== undefined && input.params !== '') {
-		body.params = parseJsonObjectParameter(node, input.params, 'Tag Parameters');
-	}
+	const params =
+		input.params !== undefined && input.params !== ''
+			? parseJsonObjectParameter(node, input.params, 'Tag Parameters')
+			: undefined;
+	const tagParams = capabilityParameters(node, String(body.tag ?? ''), params);
+	if (tagParams !== undefined) body.params = tagParams;
 	return body;
 }
 
@@ -322,7 +343,16 @@ async function search(this: IExecuteFunctions, body: IDataObject): Promise<IData
 			envelope.request_id,
 		);
 	}
-	return { request_id: envelope.request_id, results, metadata: data.metadata ?? {} };
+	return {
+		request_id: envelope.request_id,
+		results: results.map((result) => {
+			const url = result.url as string;
+			return url.startsWith(REDDIT_ORIGIN + REDDIT_ORIGIN + '/')
+				? { ...result, url: url.slice(REDDIT_ORIGIN.length) }
+				: result;
+		}),
+		metadata: data.metadata ?? {},
+	};
 }
 
 async function searchOperation(
@@ -681,7 +711,7 @@ export class AnySearch implements INodeType {
 						default: '{}',
 						placeholder: '{"lang": "go"}',
 						description:
-							'JSON object with extra parameters for the capability tag (e.g. {"ticker": "AAPL"} for finance.quote)',
+							'JSON object with parameters for the capability tag (e.g. {"type": "stock", "symbol": "AAPL"} for finance.quote)',
 					},
 					{
 						displayName: 'Zone',

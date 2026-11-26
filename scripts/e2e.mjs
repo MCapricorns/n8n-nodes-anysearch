@@ -9,15 +9,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createModelServer } from '../test/e2e/model-server.mjs';
 import { runFaultWorkflows } from '../test/e2e/fault-workflows.mjs';
+import { addCapabilityChecks, checkCapabilityRequests } from '../test/e2e/capability-checks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const packageRoot = path.resolve(process.env.ANYSEARCH_E2E_PACKAGE || root);
 const n8nRoot = path.resolve(process.env.N8N_E2E_PACKAGE || path.join(root, 'node_modules/n8n'));
 const engineRequire = createRequire(path.join(n8nRoot, 'package.json'));
 const version = engineRequire('./package.json').version;
 const cli = path.join(n8nRoot, 'bin/n8n');
 const nodeExecutable = process.env.N8N_E2E_NODE || process.execPath;
 const apiKey = (process.env.ANYSEARCH_API_KEY || '').trim();
-assert(apiKey, 'Set ANYSEARCH_API_KEY for authenticated live n8n tests');
+const capabilityOnly = process.argv.includes('--capabilities');
+assert(apiKey || capabilityOnly, 'Set ANYSEARCH_API_KEY for authenticated live n8n tests');
 const work = await fs.mkdtemp(path.join(os.tmpdir(), 'anysearch-n8n-e2e-'));
 const output = path.resolve(process.env.N8N_E2E_OUTPUT || path.join(work, 'evidence'));
 await fs.mkdir(output, { recursive: true });
@@ -38,9 +41,7 @@ const env = {
 delete env.ANYSEARCH_API_KEY;
 delete env.ANYSEARCH_REVIEW_KEY;
 const redact = (value) =>
-	String(value)
-		.split(apiKey)
-		.join('[REDACTED]')
+	(apiKey ? String(value).split(apiKey).join('[REDACTED]') : String(value))
 		.split(encryptionKey)
 		.join('[REDACTED]')
 		.replace(/as_sk_[A-Za-z0-9_-]+/g, '[REDACTED]')
@@ -98,7 +99,7 @@ function executionFrom(stdout) {
 	}
 	throw new Error('n8n did not return execution JSON');
 }
-const modelServer = await createModelServer();
+const modelServer = capabilityOnly ? undefined : await createModelServer();
 const tests = [];
 const nodes = [
 	{
@@ -309,7 +310,7 @@ add(
 		assert([400, 422].includes(items[0].json.details.http_status));
 	},
 );
-if (process.env.ANYSEARCH_E2E_CASES) {
+if (!capabilityOnly && process.env.ANYSEARCH_E2E_CASES) {
 	const cases = JSON.parse(await fs.readFile(process.env.ANYSEARCH_E2E_CASES, 'utf8'));
 	for (const entry of cases)
 		if (entry.tag === 'travel.flight')
@@ -352,7 +353,7 @@ nodes.push(
 		position: [1000, 200],
 		parameters: {
 			model: { __rl: true, mode: 'id', value: 'e2e-model' },
-			options: { baseURL: modelServer.url, maxRetries: 0, timeout: 30000 },
+			options: { baseURL: modelServer?.url, maxRetries: 0, timeout: 30000 },
 		},
 		credentials: { openAiApi: { id: 'local-model', name: 'local-model' } },
 	},
@@ -457,12 +458,18 @@ tests.push({
 	},
 });
 
+const standardTestCount = tests.length;
+addCapabilityChecks(add, apiKey ? 'valid' : null);
+const selectedTests = capabilityOnly ? tests.slice(standardTestCount) : tests;
+const selectedNames = new Set(selectedTests.map((test) => test.name));
 const summary = {
 	startedAt: new Date().toISOString(),
 	n8n: version,
+	packageVersion: JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'))
+		.version,
 	nodeRuntime: execFileSync(nodeExecutable, ['--version'], { encoding: 'utf8' }).trim(),
 	nodeBuildSha256: createHash('sha256')
-		.update(await fs.readFile(path.join(root, 'dist/nodes/AnySearch/AnySearch.node.js')))
+		.update(await fs.readFile(path.join(packageRoot, 'dist/nodes/AnySearch/AnySearch.node.js')))
 		.digest('hex'),
 	tests: [],
 	requests: [],
@@ -471,8 +478,8 @@ try {
 	const modules = path.join(env.N8N_USER_FOLDER, '.n8n/nodes/node_modules');
 	const installed = path.join(modules, 'n8n-nodes-anysearch');
 	await fs.mkdir(installed, { recursive: true });
-	await fs.cp(path.join(root, 'dist'), path.join(installed, 'dist'), { recursive: true });
-	await fs.copyFile(path.join(root, 'package.json'), path.join(installed, 'package.json'));
+	await fs.cp(path.join(packageRoot, 'dist'), path.join(installed, 'dist'), { recursive: true });
+	await fs.copyFile(path.join(packageRoot, 'package.json'), path.join(installed, 'package.json'));
 	await fs.symlink(
 		path.dirname(engineRequire.resolve('n8n-workflow/package.json')),
 		path.join(modules, 'n8n-workflow'),
@@ -511,7 +518,7 @@ try {
 						name: 'local-model',
 						type: 'openAiApi',
 						data: cipher.encrypt(
-							JSON.stringify({ apiKey: 'synthetic-local-model', url: modelServer.url }),
+							JSON.stringify({ apiKey: 'synthetic-local-model', url: modelServer?.url }),
 							encryptionKey,
 						),
 					},
@@ -530,8 +537,16 @@ try {
 		id: 'AnySearchE2E0001',
 		name: 'AnySearch end-to-end',
 		active: false,
-		nodes,
-		connections,
+		nodes: capabilityOnly
+			? nodes.filter((node) => node.id === 'start' || selectedNames.has(node.name))
+			: nodes,
+		connections: capabilityOnly
+			? {
+					Start: {
+						main: [connections.Start.main[0].filter((link) => selectedNames.has(link.node))],
+					},
+				}
+			: connections,
 		settings: { executionOrder: 'v1' },
 	};
 	const workflowFile = path.join(work, 'workflow.json');
@@ -567,9 +582,14 @@ try {
 	}
 	assert.equal(data.status, 'success', 'n8n workflow did not succeed');
 	assert.equal(data.finished, true);
-	assert(!JSON.stringify(data).includes(apiKey), 'API key leaked into n8n execution data');
+	assert(
+		!apiKey || !JSON.stringify(data).includes(apiKey),
+		'API key leaked into n8n execution data',
+	);
+	summary.workflowId = workflow.id;
+	summary.executionStatus = data.status;
 	const runData = data.data.resultData.runData;
-	for (const test of tests) {
+	for (const test of selectedTests) {
 		const record = { name: test.name };
 		try {
 			const runs = runData[test.name];
@@ -621,44 +641,48 @@ try {
 		summary.requests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
-	for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
-		const requests = summary.requests.filter((request) => request.body?.query === query);
-		assert.equal(requests.length, 1);
-		assert.equal(requests[0].authorizationPresent, false, 'Anonymous request sent Authorization');
+	checkCapabilityRequests(summary.requests, summary.tests);
+	if (!capabilityOnly) {
+		for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
+			const requests = summary.requests.filter((request) => request.body?.query === query);
+			assert.equal(requests.length, 1);
+			assert.equal(requests[0].authorizationPresent, false, 'Anonymous request sent Authorization');
+		}
+		const invalid = summary.requests.filter((request) => request.body?.query === 'n8n');
+		assert.equal(invalid.length, 1);
+		assert.equal(invalid[0].fixtureBearer, true);
+		const events = summary.requests
+			.flatMap((request) => [
+				[request.startedAt, 1],
+				[request.finishedAt, -1],
+			])
+			.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+		let active = 0;
+		summary.maximumConcurrentRequests = 0;
+		for (const [, delta] of events) {
+			active += delta;
+			summary.maximumConcurrentRequests = Math.max(summary.maximumConcurrentRequests, active);
+		}
+		assert(summary.maximumConcurrentRequests >= 2 && summary.maximumConcurrentRequests <= 5);
+		summary.faults = await runFaultWorkflows({
+			invoke,
+			executionFrom,
+			root,
+			work,
+			output,
+			redact,
+			apiKey,
+		});
 	}
-	const invalid = summary.requests.filter((request) => request.body?.query === 'n8n');
-	assert.equal(invalid.length, 1);
-	assert.equal(invalid[0].fixtureBearer, true);
-	const events = summary.requests
-		.flatMap((request) => [
-			[request.startedAt, 1],
-			[request.finishedAt, -1],
-		])
-		.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-	let active = 0;
-	summary.maximumConcurrentRequests = 0;
-	for (const [, delta] of events) {
-		active += delta;
-		summary.maximumConcurrentRequests = Math.max(summary.maximumConcurrentRequests, active);
-	}
-	assert(summary.maximumConcurrentRequests >= 2 && summary.maximumConcurrentRequests <= 5);
-	summary.faults = await runFaultWorkflows({
-		invoke,
-		executionFrom,
-		root,
-		work,
-		output,
-		redact,
-		apiKey,
-	});
-	summary.passed = summary.tests.every((test) => test.passed) && summary.faults.passed;
+	summary.passed =
+		summary.tests.every((test) => test.passed) && (capabilityOnly || summary.faults.passed);
 } catch (error) {
 	summary.passed = false;
 	summary.failure = redact(error.message);
 	console.error(summary.failure);
 } finally {
-	await modelServer.close();
-	summary.localModel = modelServer.state;
+	await modelServer?.close();
+	summary.localModel = modelServer?.state;
 	summary.finishedAt = new Date().toISOString();
 	await fs.writeFile(path.join(output, 'summary.json'), JSON.stringify(summary, null, 2));
 	await fs.rm(path.join(work, 'instance'), { recursive: true, force: true });

@@ -72,7 +72,9 @@ Set Resource to **Search**, Operation to **Search**, and enter a query. Options 
 | Response Format | JSON or Markdown content; the outer response remains JSON |
 | Simplify | Enabled: one item per result. Disabled: one item with results and metadata |
 
-Result fields are preserved, including optional or null snippet/content fields. A valid empty
+Result fields are preserved, including optional or null snippet/content fields. Search repairs
+the duplicated `https://www.reddit.com` prefix on malformed Reddit links. A source can return
+an empty URL for structured data. A valid empty
 result set returns no items with Simplify enabled. Disable Simplify to retain the request ID
 and an empty results array. Successful items include the service's request_id when available.
 
@@ -82,13 +84,20 @@ and an empty results array. Successful items include the service's request_id wh
 2. Use **Capability > Get Sub-Domains** to read the current tags and parameter definitions.
 3. Copy the selected tag and supply its parameters in **Search**.
 
-For example, code.doc uses {"library":"react"}. finance.fundamental with type=overview uses
-{"type":"overview","symbol":"AAPL","cn_code":""}.
+For example, `code.doc` uses `{"library":"react"}`. Search and Batch Search apply the same
+catalog rules to parameters entered as JSON or supplied by n8n expressions.
 
-Include every required parameter. When its definition permits an inapplicable value, preserve
-the field with an empty string. Read conditional requirements in the descriptions as well as
-the required flags. Optional parameters may be omitted. Parameters pass through unchanged;
-AnySearch validates their current business rules.
+| Capability | Parameters |
+| --- | --- |
+| `travel.flight_status` | Supply `flight_number`. The node sends `departure: ""` when the airport is omitted. |
+| `finance.fundamental` | For `overview`, supply a ticker such as `{"type":"overview","symbol":"AAPL"}`. The node fills omitted `cn_code` with `""`. An omitted `symbol` is also sent as `""` so the API can read the ticker from the query. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply `cn_code`. The node fills omitted `symbol` with `""`. |
+| `finance.calendar` and `finance.quote` | Earnings queries default to `period: "90d"`. Crypto quotes require `symbol`. |
+| `gaming.esports` | Player, ranked, mastery, and live-game queries require `region` and `game_name`, including names with a Riot tag. A leaderboard requires `region` and a match-detail lookup requires `match_id`. Division filters apply to leaderboard tiers from Diamond through Iron. |
+| `academic.citation` | For `op=citation`, supply an Open Citation Identifier in `id`, such as `06101801781-06180334099`. |
+
+Explicit values take precedence over defaults. Read conditional requirements in the current
+directory descriptions as well as the required flags. New tags and extra parameters pass
+through to AnySearch.
 
 Source selectors use the same JSON field: for example, finance.news accepts type=flash with
 news_src=sina, and social_media.social_media accepts type=reddit_post. The available tags,
@@ -144,8 +153,9 @@ Search, Batch Search, Extract, and Capability operations continue to use REST.
 
 - HTTP failures, timeouts, non-zero business codes, invalid JSON, and malformed responses
   produce explicit failures. Missing result/content fields are not converted into empty success.
-- HTTP errors expose a fixed description, status, and available request ID. Raw error bodies
-  are discarded: anonymous HTTP 402 responses can contain generated account credentials.
+- HTTP errors include the status and available request ID. For a recognized HTTP 400 missing-parameter
+  response, the node also names the missing fields from the public catalog. Other HTTP failures use
+  fixed descriptions. Raw error bodies are discarded because anonymous HTTP 402 responses can contain generated account credentials.
   Business errors retain their code and request ID without echoing upstream messages.
 - **Continue On Fail** emits an error string and a details object with available request_id
   and http_status. This follows n8n's error-output format and preserves the diagnostics in
@@ -186,6 +196,11 @@ export N8N_E2E_OUTPUT='/path/to/private/evidence'
 npm run build
 npm run test:e2e
 ~~~
+
+To run the capability acceptance cases alone, use `npm run test:e2e -- --capabilities`.
+This mode supports anonymous access. It checks live flight, financial, esports and Reddit
+results, field-specific failures, and the HTTP requests sent by n8n. Set `ANYSEARCH_E2E_PACKAGE`
+to an unpacked npm package directory to test that artifact.
 
 For the broader catalog/source matrix, also set ANYSEARCH_E2E_CASES to the absolute path of
 test/e2e/search-cases.json. Refresh the catalog and review the cases before running against a
