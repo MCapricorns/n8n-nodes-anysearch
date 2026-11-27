@@ -12,7 +12,9 @@ export async function runFaultWorkflows({
 	redact,
 	apiKey,
 }) {
-	const privateValues = ['PRIVATE_UPSTREAM_KEY', 'PRIVATE_UPSTREAM_PASSWORD', apiKey];
+	const privateValues = ['PRIVATE_UPSTREAM_KEY', 'PRIVATE_UPSTREAM_PASSWORD', apiKey].filter(
+		Boolean,
+	);
 	const requests = [];
 	const server = createServer(async (request, response) => {
 		const chunks = [];
@@ -41,6 +43,7 @@ export async function runFaultWorkflows({
 		if (status !== 200 || scenario === 'business')
 			Object.assign(envelope, {
 				code: -1,
+				error_code: 'fixture_failure',
 				message: 'api_key=PRIVATE_UPSTREAM_KEY password=PRIVATE_UPSTREAM_PASSWORD',
 			});
 		if (scenario === 'business')
@@ -83,7 +86,7 @@ export async function runFaultWorkflows({
 			id: scenario,
 			name: scenario,
 			type: 'n8n-nodes-anysearch.anySearch',
-			typeVersion: 1,
+			typeVersion: 2,
 			position: [400, index * 100],
 			parameters:
 				scenario === 'invalid-content'
@@ -112,7 +115,7 @@ export async function runFaultWorkflows({
 		id: 'batch-errors',
 		name: 'Batch Error Output',
 		type: 'n8n-nodes-anysearch.anySearch',
-		typeVersion: 1,
+		typeVersion: 2,
 		position: [800, 0],
 		parameters: {
 			resource: 'search',
@@ -139,8 +142,9 @@ export async function runFaultWorkflows({
 		assert.equal(imported.code, 0, 'Fault workflow import failed');
 		const execution = await invoke(['execute', '--id=' + workflow.id, '--rawOutput'], extraEnv);
 		const data = executionFrom(execution.stdout);
+		const serialized = JSON.stringify(data);
 		assert(
-			privateValues.every((value) => !JSON.stringify(data).includes(value)),
+			privateValues.every((value) => !serialized.includes(value)),
 			'Secret appeared in n8n execution data',
 		);
 		return data;
@@ -162,6 +166,12 @@ export async function runFaultWorkflows({
 					assert.equal(item.json.details.http_status, Number(scenario.slice(5)));
 					assert.equal(item.json.details.request_id, 'fault-' + scenario);
 				}
+				if (scenario === 'http-402') {
+					assert.deepEqual(item.json.details, { http_status: 402, request_id: 'fault-http-402' });
+				} else if (scenario.startsWith('http-') || scenario === 'business') {
+					assert.equal(item.json.details.code, -1);
+					assert.equal(item.json.details.error_code, 'fixture_failure');
+				}
 				if (scenario === 'http-429') assert.equal(run.data.main[0].length, 0);
 				if (scenario === 'timeout') assert.match(item.json.error, /timeout|timed out|aborted/i);
 				if (scenario === 'unreadable')
@@ -180,6 +190,9 @@ export async function runFaultWorkflows({
 		assert.equal(batch[0][0].json.query_index, 0);
 		assert.equal(batch[1].length, 1);
 		assert.equal(batch[1][0].json.details.http_status, 429);
+		assert.equal(batch[1][0].json.details.code, -1);
+		assert.equal(batch[1][0].json.details.error_code, 'fixture_failure');
+		assert.equal(batch[1][0].json.details.request_id, 'fault-http-429');
 		assert.equal(batch[1][0].json.details.query_index, 1);
 		tests.push({ name: 'batch-error-output', passed: true });
 		const failing = {
@@ -196,6 +209,8 @@ export async function runFaultWorkflows({
 		assert.equal(stopped.status, 'error');
 		assert.equal(stopped.data.resultData.error.context.http_status, 402);
 		assert.equal(stopped.data.resultData.error.context.request_id, 'fault-http-402');
+		assert(!Object.hasOwn(stopped.data.resultData.error.context, 'code'));
+		assert(!Object.hasOwn(stopped.data.resultData.error.context, 'error_code'));
 		tests.push({ name: 'stop-on-failure', passed: true });
 		for (const onError of ['continueRegularOutput', 'continueErrorOutput', 'stopWorkflow']) {
 			const feedback = {

@@ -7,6 +7,13 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 
+export function readAnySearchApiKey(value: unknown): string | undefined {
+	if (typeof value !== 'string') {
+		throw new Error('The selected credential must contain an API Key string.');
+	}
+	return value.trim() || undefined;
+}
+
 export class AnySearchApi implements ICredentialType {
 	name = 'anySearchApi';
 
@@ -34,8 +41,8 @@ export class AnySearchApi implements ICredentialType {
 		credentials: ICredentialDataDecryptedObject,
 		requestOptions: IHttpRequestOptions,
 	): Promise<IHttpRequestOptions> {
-		const apiKey = typeof credentials.apiKey === 'string' ? credentials.apiKey.trim() : '';
-		if (apiKey === '') {
+		const apiKey = readAnySearchApiKey(credentials.apiKey);
+		if (apiKey === undefined) {
 			return requestOptions;
 		}
 		return {

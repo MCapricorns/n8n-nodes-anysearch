@@ -19,6 +19,21 @@ request fields. Get Sub-Domains repeats `domain` for each selection, and Extract
 The node also uses the live `GET /v1/domains` endpoint to populate the domain picker and test
 credentials. [AnySearch REST reference](https://www.anysearch.com/docs/api-endpoints)
 
+Newly added nodes use version 2. AnySearch validates its REST fields and applies the service
+defaults. Saved version 1 nodes keep their existing local validation, parameter defaults,
+and workflow configuration.
+
+| REST endpoint | Required | Optional |
+| --- | --- | --- |
+| `POST /v1/search` | Non-empty string `query` | `max_results`, `tag`, `zone`, `language`, `params`, `format` |
+| `GET /v1/sub-domains` | At least one `domain` query parameter. Repeat the key for multiple domains |  |
+| `POST /v1/extract` | One public absolute HTTP(S) `url` in the JSON body |  |
+
+Both POST endpoints use `Content-Type: application/json`. The Extract API limits its request
+body to 16 KiB. Batch Search calls the Search endpoint once per entry. The node checks the batch
+array length, parses JSON editor input, and blocks extraction URLs containing credentials locally.
+[Search](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains) · [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract)
+
 The package has no bundled runtime dependencies. n8n supplies the n8n-workflow peer dependency.
 The integration is tested with n8n 2.44.7 on Node.js 24.22.1; compatibility with every older n8n
 release has not been certified.
@@ -60,8 +75,8 @@ it never silently switches to anonymous access. Invalid or expired keys also fai
 
 Anonymous access has lower limits and shares an IP-based quota. The credential connection test
 uses GET /v1/domains and does not consume search quota. Account registration, key rotation, and
-billing remain in the AnySearch console; this node does not create or save credentials returned
-by the service.
+billing stay with AnySearch. The node uses keys saved in n8n credentials and delegates account
+provisioning to the [AnySearch registration tools](https://www.anysearch.com/docs/api-endpoints#create-an-account-and-api-key).
 
 ## Search
 
@@ -69,7 +84,7 @@ Set Resource to **Search**, Operation to **Search**, and enter a query. Options 
 
 | Option | Behavior |
 | --- | --- |
-| Max Results | Integer from 1 to 10; the API default is 10 |
+| Max Results | Documented range is 1–10. Leave the option unset to use the API default of 10 |
 | Capability Tag | Current domain.sub_domain tag; omit for general search |
 | Tag Parameters | JSON object containing the selected tag's parameters |
 | Zone | Auto, China (cn), or International (intl) |
@@ -89,31 +104,18 @@ and an empty results array. Successful items include the service's request_id wh
 2. Use **Capability > Get Sub-Domains** to read the current tags and parameter definitions.
 3. Copy the selected tag and supply its parameters in **Search**.
 
-For example, `code.doc` uses `{"library":"react"}`. Search and Batch Search apply the same
-catalog rules to parameters entered as JSON or supplied by n8n expressions.
+For example, `code.doc` uses `{"library":"react"}`. In node version 2, Search and Batch Search
+send the supplied capability parameters to AnySearch for validation and defaults.
 
 | Capability | Parameters |
 | --- | --- |
-| `travel.flight_status` | Supply `flight_number`. The node sends `departure: ""` when the airport is omitted. |
-| `finance.fundamental` | For `overview`, the node sends `cn_code: ""` and uses the supplied `symbol`, or sends an empty symbol so the API can read the ticker from the query. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply `cn_code`. The node always sends `symbol: ""` for these five operations. |
-| `finance.calendar` and `finance.quote` | Every earnings calendar request sends `period: "90d"`, including when the input supplies a different period. Crypto quotes require `symbol`. |
-| `gaming.esports` | Player, ranked, mastery and live-game queries require a server `region` and a player name, with or without a Riot tag. Match details require an ID such as `KR_7482819248` or `EUW1_6723541890`. Leaderboards require a region. Use division `I`, `II`, `III` or `IV` with a tier from Diamond through Iron. The node checks the documented type, region, tier, division and queue before sending a request. |
-| `academic.citation` | For `op=citation`, supply an Open Citation Identifier in `id`, such as `06101801781-06180334099`. |
+| `travel.flight_status` | Supply `flight_number` and `departure`. Use `departure: ""` if the airport is unknown. |
+| `finance.fundamental` | Supply `type`, `symbol` and `cn_code`. For `overview`, use `cn_code: ""`. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, use `symbol: ""`. |
+| `finance.calendar` | For `type: "earnings"`, supply `period: "90d"` and the company's `symbol` or `cn_code`, as specified in discovery. |
 
-Read each field's required flag and description together. Fixed values above also apply when
-an n8n expression supplies a conflicting value. New tags and extra parameters pass through
-to AnySearch. The reviewed catalog records the official wording and required flag for every
-field. [Parameter definitions](test/e2e/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
-
-The node checks the source selector for finance flash news and the search type for social media.
-For example, finance.news accepts type=flash with news_src=sina, and social_media.social_media
-accepts type=reddit_post. Company overviews accept annual or quarter for period. The available tags,
-source selectors, and filtering behavior can change; refresh discovery instead of relying on
-an old example. Some documented fields apply only to particular upstream providers.
-
-The node accepts positive day ranges such as `13d`, plus `1y` and `5y`, for the documented
-quote-style finance operations. Macro indicators have their own periods. Esports mastery
-accepts a champion name or substring, and match lookups use a Riot platform prefix.
+Read each field's required flag and description together. When upgrading a node from version 1
+to version 2, supply any values that version 1 inserted or overrode. The reviewed catalog records
+the official wording and required flag for each field. [Parameter definitions](test/e2e/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
 
 ## Batch search
 
@@ -129,8 +131,8 @@ Choose **Search > Batch Search** and supply a JSON array of 1–5 REST search ob
 Each object accepts query, max_results, tag, params, zone, language, and format. Searches run
 concurrently, with at most five requests in flight per input item. Results remain in input
 order. Successful queries include query, query_index, results, and metadata. Failed queries
-include error and a details object containing query, query_index, and available request_id
-and http_status. One failed query does not discard siblings.
+include error and a details object containing query, query_index, and any available request_id,
+http_status, code, and error_code. One failed query does not discard siblings.
 
 Batch Search uses independent REST requests. Quota is charged per search. A batch containing
 individual failures completes with error items. Select **On Error > Continue (using error output)**
@@ -161,15 +163,15 @@ use the AnySearch REST API.
 
 ## Errors and privacy
 
-- HTTP failures, timeouts, non-zero business codes, invalid JSON, and malformed responses
-  produce explicit failures. Missing result/content fields are not converted into empty success.
-- HTTP errors include the status and available request ID. For a recognized HTTP 400 missing-parameter
-  response, the node also names the missing fields from the public catalog. Other HTTP failures use
-  fixed descriptions. Raw error bodies are discarded because anonymous HTTP 402 responses can contain generated account credentials.
-  Business errors retain their code and request ID without echoing upstream messages.
-- **Continue On Fail** emits an error string and a details object with available request_id
-  and http_status. This follows n8n's error-output format and preserves the diagnostics in
-  both regular and dedicated error branches. Batch Search always
+- HTTP 200 with business code `0` indicates API success. Timeouts, other HTTP statuses, non-zero
+  business codes, and malformed responses produce explicit failures. An empty results array is
+  valid for Search. [AnySearch response contract](https://www.anysearch.com/docs/quick-start#success-response)
+- HTTP and business errors retain the status and available request ID, code, and error_code.
+  Recognized AnySearch messages include missing fields from the public catalog. The node uses
+  fixed descriptions for other responses. HTTP 402 retains only the status and request ID from
+  AnySearch because the response can contain generated account credentials.
+- **Continue On Fail** emits an error string and a details object with the available diagnostics.
+  This follows n8n's error-output format in both regular and dedicated error branches. Batch Search always
   keeps per-query errors separate and supports n8n's dedicated error output. **Retry On Fail** can replay a whole node execution and
   consume quota again, so avoid automatic retries of partially completed batches.
 - Requests have a 60-second timeout and do not follow redirects from the API endpoint. Page
@@ -213,8 +215,11 @@ npm run test:e2e
 
 To run the capability acceptance cases alone, use `npm run test:e2e -- --capabilities`.
 This mode supports anonymous access. It checks live flight, financial, esports and Reddit
-results, field-specific failures, and the HTTP requests sent by n8n. Set `ANYSEARCH_E2E_PACKAGE`
+results, upstream parameter errors, and the HTTP requests sent by n8n. Set `ANYSEARCH_E2E_PACKAGE`
 to an unpacked npm package directory to test that artifact.
+
+Run `npm run test:e2e -- --faults` to verify network and response failures in real n8n against
+local fixtures using synthetic credentials.
 
 For the catalog matrix, set `ANYSEARCH_E2E_CASES` to the absolute path of
 `test/e2e/search-cases.json` in either mode. The runner joins node outputs to captured HTTP

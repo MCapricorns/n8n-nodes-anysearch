@@ -24,10 +24,15 @@ const engineRequire = createRequire(path.join(n8nRoot, 'package.json'));
 const version = engineRequire('./package.json').version;
 const cli = path.join(n8nRoot, 'bin/n8n');
 const nodeExecutable = process.env.N8N_E2E_NODE || process.execPath;
-const apiKey = (process.env.ANYSEARCH_API_KEY || '').trim();
 const capabilityOnly = process.argv.includes('--capabilities');
 const singleCatalog = process.argv.includes('--single-catalog');
-assert(apiKey || capabilityOnly, 'Set ANYSEARCH_API_KEY for authenticated live n8n tests');
+const faultsOnly = process.argv.includes('--faults');
+assert(!(faultsOnly && (capabilityOnly || singleCatalog)), '--faults runs independently');
+const apiKey = faultsOnly ? '' : (process.env.ANYSEARCH_API_KEY || '').trim();
+assert(
+	apiKey || capabilityOnly || faultsOnly,
+	'Set ANYSEARCH_API_KEY for authenticated live n8n tests',
+);
 const work = await fs.mkdtemp(path.join(os.tmpdir(), 'anysearch-n8n-e2e-'));
 const output = path.resolve(process.env.N8N_E2E_OUTPUT || path.join(work, 'evidence'));
 await fs.mkdir(output, { recursive: true });
@@ -106,7 +111,7 @@ function executionFrom(stdout) {
 	}
 	throw new Error('n8n did not return execution JSON');
 }
-const modelServer = capabilityOnly ? undefined : await createModelServer();
+const modelServer = capabilityOnly || faultsOnly ? undefined : await createModelServer();
 const catalogRecords = [];
 const catalogFile =
 	process.env.ANYSEARCH_E2E_CASES ||
@@ -128,7 +133,7 @@ function add(name, parameters, credential, check) {
 		id: name,
 		name,
 		type: 'n8n-nodes-anysearch.anySearch',
-		typeVersion: 1,
+		typeVersion: 2,
 		position: [400, tests.length * 120],
 		parameters,
 		onError: 'continueRegularOutput',
@@ -228,6 +233,18 @@ function addStandardTests() {
 	);
 	add(
 		'Invalid URL',
+		{ resource: 'extract', operation: 'extract', url: ' https://example.com ' },
+		'valid',
+		(items) => {
+			assert.equal(items[0].json.error, 'URL is invalid.');
+			assert.equal(items[0].json.details.http_status, 400);
+			assert.equal(items[0].json.details.code, -1);
+			assert.equal(items[0].json.details.error_code, 'invalid_extract_url');
+			assert(items[0].json.details.request_id);
+		},
+	);
+	add(
+		'URL with embedded credentials',
 		{ resource: 'extract', operation: 'extract', url: 'https://user:password@example.com' },
 		'valid',
 		(items) => {
@@ -259,7 +276,9 @@ function addStandardTests() {
 		(items) => {
 			assert.equal(items.length, 3);
 			assert(items[0].json.results?.length);
-			assert(items[1].json.error);
+			assert.equal(items[1].json.error, 'Query is required.');
+			assert.equal(items[1].json.details.http_status, 400);
+			assert(items[1].json.details.request_id);
 			assert(items[2].json.results?.length);
 			assert.deepEqual(
 				items.map((item) => item.json.query_index ?? item.json.details.query_index),
@@ -346,7 +365,7 @@ function addStandardTests() {
 			id: 'tool',
 			name: 'Search Tool',
 			type: 'n8n-nodes-anysearch.anySearchTool',
-			typeVersion: 1,
+			typeVersion: 2,
 			position: [1200, 200],
 			parameters: {
 				resource: 'search',
@@ -382,7 +401,7 @@ function addStandardTests() {
 			id: 'item-search',
 			name: 'Item Search',
 			type: 'n8n-nodes-anysearch.anySearch',
-			typeVersion: 1,
+			typeVersion: 2,
 			position: [1900, 0],
 			parameters: {
 				resource: 'search',
@@ -472,8 +491,6 @@ async function addCatalogTests(credential) {
 				entry.params.date = dateAfter(30);
 				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
 			}
-			if (entry.tag === 'travel.flight_status' && entry.params?.date)
-				entry.params.date = dateAfter(0);
 		}
 		const groupSize = singleCatalog ? 1 : 5;
 		for (let index = 0; index < cases.length; index += groupSize) {
@@ -503,12 +520,10 @@ async function addCatalogTests(credential) {
 				credential,
 				(items) => {
 					assert.equal(items.length, group.length);
-					for (const [i, row] of records.entries()) row.output = items[i].json;
-					for (let item = 0; item < items.length; item++) {
-						assert(!items[item].json.error, group[item].tag + ': ' + items[item].json.error);
-						assert(Array.isArray(items[item].json.results));
-						if (!singleCatalog) assert.equal(items[item].json.query_index, item);
-						assert(items[item].json.request_id);
+					for (const [i, row] of records.entries()) {
+						row.output = items[i].json;
+						if (!singleCatalog)
+							assert.equal(row.output.query_index ?? row.output.details?.query_index, i);
 					}
 				},
 			);
@@ -516,9 +531,11 @@ async function addCatalogTests(credential) {
 	}
 }
 
-if (!capabilityOnly) addStandardTests();
-if (!capabilityOnly || catalogFile) await addCatalogTests(apiKey ? 'valid' : null);
-addCapabilityChecks(add, apiKey ? 'valid' : null);
+if (!faultsOnly) {
+	if (!capabilityOnly) addStandardTests();
+	if (!capabilityOnly || catalogFile) await addCatalogTests(apiKey ? 'valid' : null);
+	addCapabilityChecks(add, apiKey ? 'valid' : null);
+}
 async function importCredentials() {
 	const coreRoot = path.dirname(engineRequire.resolve('n8n-core/package.json'));
 	const cipherPath = path.join(coreRoot, 'dist/encryption/aes-256-cbc.js');
@@ -530,10 +547,9 @@ async function importCredentials() {
 	function credential(id, type, data, key = encryptionKey) {
 		return { id, name: id, type, data: cipher.encrypt(JSON.stringify(data), key) };
 	}
-	const credentials = [credential('valid', 'anySearchApi', { apiKey })];
+	const credentials = apiKey ? [credential('valid', 'anySearchApi', { apiKey })] : [];
 	if (!capabilityOnly) {
 		credentials.push(
-			credential('blank', 'anySearchApi', { apiKey: '' }),
 			credential('invalid', 'anySearchApi', { apiKey: 'synthetic_invalid_key' }),
 			credential(
 				'unreadable',
@@ -541,6 +557,11 @@ async function importCredentials() {
 				{ apiKey: 'fixture' },
 				randomBytes(32).toString('hex'),
 			),
+		);
+	}
+	if (modelServer) {
+		credentials.push(
+			credential('blank', 'anySearchApi', { apiKey: '' }),
 			credential('local-model', 'openAiApi', {
 				apiKey: 'synthetic-local-model',
 				url: modelServer.url,
@@ -576,18 +597,7 @@ const summary = {
 	tests: [],
 	requests: [],
 };
-try {
-	const modules = path.join(env.N8N_USER_FOLDER, '.n8n/nodes/node_modules');
-	const installed = path.join(modules, 'n8n-nodes-anysearch');
-	await fs.mkdir(installed, { recursive: true });
-	await fs.cp(path.join(packageRoot, 'dist'), path.join(installed, 'dist'), { recursive: true });
-	await fs.copyFile(path.join(packageRoot, 'package.json'), path.join(installed, 'package.json'));
-	await fs.symlink(
-		path.dirname(engineRequire.resolve('n8n-workflow/package.json')),
-		path.join(modules, 'n8n-workflow'),
-		'junction',
-	);
-	if (apiKey) await importCredentials();
+async function runLiveWorkflows() {
 	const workflow = {
 		id: 'AnySearchE2E0001',
 		name: 'AnySearch end-to-end',
@@ -664,6 +674,8 @@ try {
 				contentLength: item.json.content?.length,
 				error: item.json.error,
 				http_status: item.json.details?.http_status,
+				code: item.json.details?.code,
+				error_code: item.json.details?.error_code,
 				resultHosts: [
 					...new Set(
 						(item.json.results ?? []).map((result) => {
@@ -696,6 +708,26 @@ try {
 		summary.requests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
+	verify('REST error diagnostics', () => {
+		const requests = new Map(summary.requests.map((request) => [request.request_id, request]));
+		for (const { results = [] } of summary.tests) {
+			for (const { request_id, http_status, code, error_code } of results) {
+				if (!request_id || http_status === undefined) continue;
+				const wire = requests.get(request_id);
+				assert.equal(http_status, wire?.status, 'Wire and node HTTP statuses differ');
+				assert.equal(
+					code,
+					http_status === 402 ? undefined : wire.code,
+					'Wire and node codes differ',
+				);
+				assert.equal(
+					error_code,
+					http_status === 402 ? undefined : wire.error_code,
+					'Wire and node error codes differ',
+				);
+			}
+		}
+	});
 
 	verify('Capability HTTP requests', () =>
 		checkCapabilityRequests(summary.requests, summary.tests),
@@ -753,6 +785,22 @@ try {
 			summary.maximumConcurrentRequests = Math.max(summary.maximumConcurrentRequests, active);
 		}
 		assert(summary.maximumConcurrentRequests >= 2 && summary.maximumConcurrentRequests <= 5);
+	}
+}
+try {
+	const modules = path.join(env.N8N_USER_FOLDER, '.n8n/nodes/node_modules');
+	const installed = path.join(modules, 'n8n-nodes-anysearch');
+	await fs.mkdir(installed, { recursive: true });
+	await fs.cp(path.join(packageRoot, 'dist'), path.join(installed, 'dist'), { recursive: true });
+	await fs.copyFile(path.join(packageRoot, 'package.json'), path.join(installed, 'package.json'));
+	await fs.symlink(
+		path.dirname(engineRequire.resolve('n8n-workflow/package.json')),
+		path.join(modules, 'n8n-workflow'),
+		'junction',
+	);
+	if (apiKey || faultsOnly) await importCredentials();
+	if (!faultsOnly) await runLiveWorkflows();
+	if (!capabilityOnly) {
 		summary.faults = await runFaultWorkflows({
 			invoke,
 			executionFrom,

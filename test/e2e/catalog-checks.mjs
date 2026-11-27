@@ -7,9 +7,13 @@ export function catalogDefinitions(domains) {
 		for (const { sub_domain, params = {} } of sub_domains) {
 			assert(!Object.hasOwn(tags, sub_domain), 'Duplicate tag ' + sub_domain);
 			tags[sub_domain] = Object.fromEntries(
-				Object.entries(params).map(([field, { required, description }]) => {
+				Object.entries(params).map(([field, { required, description, sort_order }]) => {
 					assert.equal(typeof required, 'boolean', sub_domain + '.' + field);
 					assert.equal(typeof description, 'string', sub_domain + '.' + field);
+					assert(
+						sort_order === undefined || Number.isInteger(sort_order),
+						sub_domain + '.' + field,
+					);
 					return [field, { required, description }];
 				}),
 			);

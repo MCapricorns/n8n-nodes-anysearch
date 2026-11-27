@@ -1,8 +1,10 @@
 import type {
+	ICredentialsDecrypted,
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
 	INode,
 	INodeExecutionData,
+	INodeProperties,
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
@@ -10,13 +12,25 @@ import type {
 	IHttpRequestOptions,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { readAnySearchApiKey } from '../../credentials/AnySearchApi.credentials';
 import { capabilityParameters, missingParameterMessage } from './capabilityParameters';
 
 const API_BASE_URL = 'https://api.anysearch.com';
 const CREDENTIAL_NAME = 'anySearchApi';
 const REQUEST_TIMEOUT = 60_000;
 const REDDIT_ORIGIN = 'https://www.reddit.com';
+const CAPABILITY_TAG_PATTERN = /^[^.\s]+\.[^.\s]+$/;
 const sanitizedErrors = new WeakSet<Error>();
+const publicErrorMessages = new Set([
+	'At least one domain parameter is required.',
+	'Capabilities temporarily unavailable.',
+	'Extraction failed.',
+	'Format must be one of: json, markdown.',
+	'Invalid API key.',
+	'Query is required.',
+	'Search is temporarily unavailable. Retry, or retry as a general search.',
+	'URL is invalid.',
+]);
 
 interface AnySearchEnvelope {
 	request_id?: string;
@@ -37,10 +51,26 @@ function safeRequestId(value: unknown): string | undefined {
 		: undefined;
 }
 
+function responseRequestId(body: IDataObject | undefined, headers: unknown): string | undefined {
+	const header = Object.entries(objectValue(headers) ?? {}).find(
+		([name]) => name.toLowerCase() === 'x-request-id',
+	);
+	return safeRequestId(body?.request_id) ?? safeRequestId(header?.[1]);
+}
+
+function readErrorBody(value: unknown): IDataObject | undefined {
+	if (typeof value !== 'string') return objectValue(value);
+	try {
+		return objectValue(JSON.parse(value));
+	} catch {
+		return undefined;
+	}
+}
+
 function safeMessage(value: unknown): string {
 	if (typeof value !== 'string' || value.trim() === '') return 'AnySearch request failed.';
 	if (
-		/(?:api[_\s-]?key|password|authorization)["']?\s*[:=]|bearer\s+\S+|as_sk_[a-z\d_-]+/i.test(
+		/(?:api[_\s-]?key|password|authorization)["']?\s*(?:[:=]|\bis\s+)|bearer\s+\S+|as_sk_[a-z\d_-]+/i.test(
 			value,
 		)
 	) {
@@ -54,6 +84,7 @@ function apiError(
 	message: string,
 	requestId?: string,
 	httpStatus?: number,
+	body?: IDataObject,
 ): NodeOperationError | NodeApiError {
 	const description = requestId ? `Request ID: ${requestId}` : undefined;
 	const error = httpStatus
@@ -61,14 +92,45 @@ function apiError(
 		: new NodeOperationError(node, message, { description });
 	if (requestId) error.context.request_id = requestId;
 	if (httpStatus) error.context.http_status = httpStatus;
+	if (body && httpStatus !== 402) {
+		if (typeof body.code === 'number' && Number.isInteger(body.code))
+			error.context.code = body.code;
+		if (
+			typeof body.error_code === 'string' &&
+			/^(?!as_sk_)[a-z][a-z\d_-]{0,63}$/i.test(body.error_code)
+		) {
+			error.context.error_code = body.error_code;
+		}
+	}
 	sanitizedErrors.add(error);
 	return error;
 }
 
-function httpMessage(status: number, body: unknown): string {
+function httpMessage(status: number, body?: IDataObject): string {
+	if (
+		status !== 402 &&
+		typeof body?.message === 'string' &&
+		publicErrorMessages.has(body.message)
+	) {
+		return body.message;
+	}
 	if (status === 400) {
-		const message = missingParameterMessage(objectValue(body)?.message);
+		const message = missingParameterMessage(body?.message);
 		if (message) return message;
+		if (body?.error_code === 'INVALID_TAG') return 'Invalid capability tag.';
+		if (typeof body?.message === 'string') {
+			// The service may include input values in these messages.
+			if (/^Invalid zone: .*\. Valid values: cn, intl\.$/s.test(body.message)) {
+				return 'Invalid zone. Valid values: cn, intl.';
+			}
+			if (body.message.startsWith('Invalid request body:')) {
+				const field =
+					/into Go struct field SearchRequest\.(query|max_results|tag|zone|language|format|params) of type /.exec(
+						body.message,
+					)?.[1];
+				return field ? `Invalid request body field: ${field}.` : 'Invalid request body.';
+			}
+		}
 	}
 	const messages: Record<number, string> = {
 		400: 'AnySearch rejected the parameters. Check the query, URL, and capability definitions.',
@@ -93,19 +155,19 @@ function toUpstreamError(node: INode, error: unknown): NodeOperationError | Node
 	const details = objectValue(error) ?? {};
 	const cause = objectValue(details.cause) ?? {};
 	const response = objectValue(details.response) ?? objectValue(cause.response) ?? {};
-	const headers = objectValue(response.headers) ?? {};
 	const context = objectValue(details.context) ?? {};
 	const body =
-		objectValue(response.data) ?? objectValue(response.body) ?? objectValue(context.data) ?? {};
-	const requestId =
-		safeRequestId(body.request_id) ??
-		safeRequestId(headers['x-request-id']) ??
-		safeRequestId(context.request_id);
+		readErrorBody(response.data) ?? readErrorBody(response.body) ?? readErrorBody(context.data);
+	const requestId = responseRequestId(body, response.headers) ?? safeRequestId(context.request_id);
 	const status = Number(
-		details.httpCode ?? details.statusCode ?? response.status ?? response.statusCode,
+		response.status ??
+			response.statusCode ??
+			details.httpCode ??
+			details.statusCode ??
+			details.status,
 	);
 	if (Number.isInteger(status) && status >= 100 && status <= 599) {
-		return apiError(node, httpMessage(status, body), requestId, status);
+		return apiError(node, httpMessage(status, body), requestId, status, body);
 	}
 	return apiError(node, safeMessage(error instanceof Error ? error.message : undefined), requestId);
 }
@@ -123,6 +185,8 @@ function errorItem(
 			...fields,
 			...(failure.context.request_id ? { request_id: failure.context.request_id } : {}),
 			...(failure.context.http_status ? { http_status: failure.context.http_status } : {}),
+			...(failure.context.code !== undefined ? { code: failure.context.code } : {}),
+			...(failure.context.error_code ? { error_code: failure.context.error_code } : {}),
 		},
 	};
 	if (node.onError === 'continueErrorOutput') {
@@ -133,21 +197,21 @@ function errorItem(
 	return { json, pairedItem: { item: itemIndex } };
 }
 
-async function readApiKey(this: AnySearchRequestContext): Promise<string | undefined> {
-	if (this.getNode().credentials?.[CREDENTIAL_NAME] === undefined) return undefined;
-	const credentials = await this.getCredentials(CREDENTIAL_NAME);
-	if (typeof credentials.apiKey !== 'string') {
-		throw new NodeOperationError(
-			this.getNode(),
-			'The selected credential must contain an API Key string.',
-		);
-	}
-	return credentials.apiKey.trim() || undefined;
+async function readCredentials(
+	this: AnySearchRequestContext,
+	itemIndex?: number,
+): Promise<ICredentialsDecrypted | undefined> {
+	const selected = this.getNode().credentials?.[CREDENTIAL_NAME];
+	if (!selected) return undefined;
+	const data = await this.getCredentials(CREDENTIAL_NAME, itemIndex);
+	if (readAnySearchApiKey(data.apiKey) === undefined) return undefined;
+	return { id: selected.id ?? '', name: selected.name, type: CREDENTIAL_NAME, data };
 }
 
 async function anySearchRequest(
 	this: AnySearchRequestContext,
 	options: IHttpRequestOptions,
+	itemIndex?: number,
 ): Promise<AnySearchEnvelope> {
 	const requestOptions: IHttpRequestOptions = {
 		...options,
@@ -156,52 +220,58 @@ async function anySearchRequest(
 		disableFollowRedirect: true,
 		returnFullResponse: true,
 		ignoreHttpStatusErrors: true,
-		headers: { ...options.headers, 'X-Anysearch-Client': 'n8n-nodes-anysearch' },
+		headers: {
+			...options.headers,
+			...(options.method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+			'X-Anysearch-Client': 'n8n-nodes-anysearch',
+		},
 	};
 	let response: { body: unknown; statusCode: number; headers?: IDataObject };
 	try {
-		const apiKey = await readApiKey.call(this);
+		const credentialsDecrypted = await readCredentials.call(this, itemIndex);
 		response =
-			apiKey === undefined
+			credentialsDecrypted === undefined
 				? await this.helpers.httpRequest(requestOptions)
 				: await this.helpers.httpRequestWithAuthentication.call(
 						this,
 						CREDENTIAL_NAME,
 						requestOptions,
+						{ credentialsDecrypted },
 					);
 	} catch (error) {
 		throw toUpstreamError(this.getNode(), error);
 	}
-	const requestId =
-		safeRequestId(objectValue(response?.body)?.request_id) ??
-		safeRequestId(response?.headers?.['x-request-id']);
-	if (!Number.isInteger(response?.statusCode)) {
+	const { statusCode } = response ?? {};
+	const body = statusCode === 200 ? objectValue(response?.body) : readErrorBody(response?.body);
+	const requestId = responseRequestId(body, response?.headers);
+	if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
 		throw apiError(this.getNode(), 'AnySearch returned an unexpected HTTP response.', requestId);
 	}
-	if (response.statusCode < 200 || response.statusCode >= 300) {
-		throw apiError(
-			this.getNode(),
-			httpMessage(response.statusCode, response.body),
-			requestId,
-			response.statusCode,
-		);
+	if (statusCode !== 200) {
+		throw apiError(this.getNode(), httpMessage(statusCode, body), requestId, statusCode, body);
 	}
-	return validateEnvelope(this.getNode(), response.body, requestId);
+	return validateEnvelope(this.getNode(), body, statusCode, requestId);
 }
 
-function validateEnvelope(node: INode, response: unknown, requestId?: string): AnySearchEnvelope {
-	const value = objectValue(response);
+function validateEnvelope(
+	node: INode,
+	value: IDataObject | undefined,
+	statusCode: number,
+	requestId?: string,
+): AnySearchEnvelope {
 	if (!value)
 		throw apiError(
 			node,
 			'AnySearch returned an unexpected response: expected a JSON object.',
 			requestId,
+			statusCode,
 		);
 	if (typeof value.code !== 'number' || !Number.isInteger(value.code)) {
 		throw apiError(
 			node,
 			'AnySearch returned an unexpected response: missing or invalid code.',
 			requestId,
+			statusCode,
 		);
 	}
 	if (value.code !== 0) {
@@ -209,6 +279,8 @@ function validateEnvelope(node: INode, response: unknown, requestId?: string): A
 			node,
 			`AnySearch API error ${value.code}. Check the request parameters and account status.`,
 			requestId,
+			statusCode,
+			value,
 		);
 	}
 	return { data: value.data, request_id: requestId };
@@ -243,36 +315,22 @@ function readArrayField(
 	return value as IDataObject[];
 }
 
-function parseJsonObjectParameter(node: INode, value: unknown, fieldName: string): IDataObject {
-	let parsed: unknown = value;
-	if (typeof value === 'string') {
-		try {
-			parsed = JSON.parse(value);
-		} catch {
-			throw new NodeOperationError(node, `${fieldName} must be valid JSON`);
-		}
+function readTagParameters(node: INode, value: IDataObject[string]): IDataObject[string] {
+	if (value === '') return undefined;
+	if (typeof value !== 'string') return value;
+	try {
+		return JSON.parse(value);
+	} catch {
+		throw new NodeOperationError(node, 'Tag Parameters must be valid JSON');
 	}
-	const object = objectValue(parsed);
-	if (!object) throw new NodeOperationError(node, `${fieldName} must be a JSON object`);
-	return object;
 }
 
-function toStringArray(node: INode, value: unknown, fieldName: string): string[] {
-	const raw = typeof value === 'string' ? value.split(',') : value;
-	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) {
-		throw new NodeOperationError(node, `${fieldName} must contain strings`);
-	}
-	const values = [...new Set(raw.map((entry) => entry.trim()).filter(Boolean))];
-	if (values.length === 0) throw new NodeOperationError(node, `${fieldName} must not be empty`);
-	return values;
-}
-
-function searchBody(node: INode, value: unknown): IDataObject {
-	const input = objectValue(value);
+function searchBodyV1(node: INode, input: IDataObject | undefined): IDataObject {
 	if (!input || typeof input.query !== 'string' || input.query.trim() === '') {
 		throw new NodeOperationError(node, 'Query must be a non-empty string');
 	}
-	const allowed = ['query', 'max_results', 'tag', 'zone', 'language', 'format', 'params'];
+	const strings = ['tag', 'zone', 'language', 'format'];
+	const allowed = ['query', 'max_results', ...strings, 'params'];
 	if (Object.keys(input).some((key) => !allowed.includes(key))) {
 		throw new NodeOperationError(
 			node,
@@ -281,46 +339,75 @@ function searchBody(node: INode, value: unknown): IDataObject {
 	}
 	const body: IDataObject = { query: input.query.trim() };
 	if (input.max_results !== undefined) {
-		if (
-			typeof input.max_results !== 'number' ||
-			!Number.isInteger(input.max_results) ||
-			input.max_results < 1 ||
-			input.max_results > 10
-		) {
+		const max = input.max_results;
+		if (typeof max !== 'number' || !Number.isInteger(max) || max < 1 || max > 10) {
 			throw new NodeOperationError(node, 'Max Results must be an integer from 1 to 10');
 		}
-		body.max_results = input.max_results;
+		body.max_results = max;
 	}
-	for (const key of ['tag', 'zone', 'language', 'format']) {
+	for (const key of strings) {
 		const value = input[key];
-		if (value === undefined || value === '') continue;
+		if (value === undefined) continue;
 		if (typeof value !== 'string') throw new NodeOperationError(node, `${key} must be a string`);
 		if (value.trim()) body[key] = value.trim();
 	}
-	if (body.zone && !['cn', 'intl'].includes(body.zone as string)) {
+	if (body.zone && body.zone !== 'cn' && body.zone !== 'intl') {
 		throw new NodeOperationError(node, 'Zone must be cn or intl');
 	}
-	if (typeof body.tag === 'string' && !/^[^.\s]+\.[^.\s]+$/.test(body.tag)) {
+	if (typeof body.tag === 'string' && !CAPABILITY_TAG_PATTERN.test(body.tag)) {
 		throw new NodeOperationError(node, 'Capability Tag must be a complete domain.sub_domain tag');
 	}
-	if (body.format && !['json', 'markdown'].includes(body.format as string)) {
+	if (body.format && body.format !== 'json' && body.format !== 'markdown') {
 		throw new NodeOperationError(node, 'Response Format must be json or markdown');
 	}
-	const params =
-		input.params !== undefined && input.params !== ''
-			? parseJsonObjectParameter(node, input.params, 'Tag Parameters')
-			: undefined;
+	const decoded = readTagParameters(node, input.params);
+	const params = objectValue(decoded);
+	if (input.params !== undefined && input.params !== '' && !params) {
+		throw new NodeOperationError(node, 'Tag Parameters must be a JSON object');
+	}
 	const tagParams = capabilityParameters(node, String(body.tag ?? ''), params);
 	if (tagParams !== undefined) body.params = tagParams;
 	return body;
 }
 
-async function search(this: IExecuteFunctions, body: IDataObject): Promise<IDataObject> {
-	const envelope = await anySearchRequest.call(this, {
-		method: 'POST',
-		url: API_BASE_URL + '/v1/search',
-		body,
-	});
+function editorSearchBody(node: INode, input: IDataObject): IDataObject {
+	if (node.typeVersion === 1) return searchBodyV1(node, input);
+	const { zone, params, ...fields } = input;
+	const tagParameters = readTagParameters(node, params);
+	return {
+		...fields,
+		...(zone === undefined || zone === '' ? {} : { zone }),
+		...(tagParameters === undefined ? {} : { params: tagParameters }),
+	};
+}
+
+function readDomains(node: INode, value: unknown): string[] {
+	// Existing workflows can supply a comma-separated expression to the picker.
+	const raw = typeof value === 'string' ? value.split(',') : value;
+	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) {
+		throw new NodeOperationError(node, 'Domain Names or IDs must contain strings');
+	}
+	if (node.typeVersion !== 1 && typeof value !== 'string') return raw;
+	const domains = raw.map((entry) => entry.trim()).filter(Boolean);
+	if (node.typeVersion !== 1) return domains;
+	if (!domains.length) throw new NodeOperationError(node, 'Domain Names or IDs must not be empty');
+	return [...new Set(domains)];
+}
+
+async function search(
+	this: IExecuteFunctions,
+	body: IDataObject | string,
+	itemIndex: number,
+): Promise<IDataObject> {
+	const envelope = await anySearchRequest.call(
+		this,
+		{
+			method: 'POST',
+			url: API_BASE_URL + '/v1/search',
+			body,
+		},
+		itemIndex,
+	);
 	const data = readDataObject(this.getNode(), envelope, 'search');
 	const results = readArrayField(this.getNode(), data, 'results', 'search', envelope.request_id);
 	if (
@@ -339,7 +426,19 @@ async function search(this: IExecuteFunctions, body: IDataObject): Promise<IData
 			envelope.request_id,
 		);
 	}
-	if (data.metadata !== undefined && !objectValue(data.metadata)) {
+	const metadata = objectValue(data.metadata);
+	if (
+		data.metadata !== undefined &&
+		(!metadata ||
+			(metadata.total_results !== undefined &&
+				(typeof metadata.total_results !== 'number' ||
+					!Number.isInteger(metadata.total_results) ||
+					metadata.total_results < 0)) ||
+			(metadata.search_time_ms !== undefined &&
+				(typeof metadata.search_time_ms !== 'number' ||
+					!Number.isFinite(metadata.search_time_ms) ||
+					metadata.search_time_ms < 0)))
+	) {
 		throw apiError(
 			this.getNode(),
 			'AnySearch search response contains invalid metadata.',
@@ -354,7 +453,7 @@ async function search(this: IExecuteFunctions, body: IDataObject): Promise<IData
 				? { ...result, url: url.slice(REDDIT_ORIGIN.length) }
 				: result;
 		}),
-		metadata: data.metadata ?? {},
+		metadata: metadata ?? {},
 	};
 }
 
@@ -364,12 +463,12 @@ async function searchOperation(
 ): Promise<INodeExecutionData[]> {
 	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
 	const { maxResults, simplify, ...fields } = options;
-	const body = searchBody(this.getNode(), {
-		query: this.getNodeParameter('query', itemIndex),
-		...(maxResults === undefined ? {} : { max_results: maxResults }),
+	const body = editorSearchBody(this.getNode(), {
 		...fields,
+		query: this.getNodeParameter('query', itemIndex, ''),
+		...(maxResults === undefined ? {} : { max_results: maxResults }),
 	});
-	const data = await search.call(this, body);
+	const data = await search.call(this, body, itemIndex);
 	const results = data.results as IDataObject[];
 	return (
 		simplify === false
@@ -382,28 +481,34 @@ async function batchSearchOperation(
 	this: IExecuteFunctions,
 	itemIndex: number,
 ): Promise<INodeExecutionData[]> {
+	const node = this.getNode();
 	let queries: unknown = this.getNodeParameter('queries', itemIndex);
 	if (typeof queries === 'string') {
 		try {
 			queries = JSON.parse(queries);
 		} catch {
-			throw new NodeOperationError(this.getNode(), 'Queries must be valid JSON');
+			throw new NodeOperationError(node, 'Queries must be valid JSON');
 		}
 	}
 	if (!Array.isArray(queries) || queries.length < 1 || queries.length > 5) {
-		throw new NodeOperationError(
-			this.getNode(),
-			'Queries must contain between 1 and 5 search objects',
-		);
+		throw new NodeOperationError(node, 'Queries must contain between 1 and 5 search objects');
 	}
 	return Promise.all(
-		queries.map(async (query: unknown, queryIndex: number) => {
-			const identity = { query: objectValue(query)?.query ?? '', query_index: queryIndex };
+		Array.from(queries, async (query: unknown, queryIndex: number) => {
+			const object = objectValue(query);
+			const identity = { query: object?.query ?? '', query_index: queryIndex };
 			try {
-				const data = await search.call(this, searchBody(this.getNode(), query));
+				// n8n's HTTP helper drops empty object and scalar request bodies.
+				const body =
+					node.typeVersion === 1
+						? searchBodyV1(node, object)
+						: object && Object.keys(object).length > 0
+							? object
+							: (JSON.stringify(query) ?? 'null');
+				const data = await search.call(this, body, itemIndex);
 				return { json: { ...identity, ...data }, pairedItem: { item: itemIndex } };
 			} catch (error) {
-				return errorItem(this.getNode(), error, itemIndex, identity);
+				return errorItem(node, error, itemIndex, identity);
 			}
 		}),
 	);
@@ -413,24 +518,42 @@ async function extractOperation(
 	this: IExecuteFunctions,
 	itemIndex: number,
 ): Promise<INodeExecutionData[]> {
-	const value = this.getNodeParameter('url', itemIndex);
-	let url: URL;
-	try {
-		url = new URL(typeof value === 'string' ? value.trim() : '');
-	} catch {
-		throw new NodeOperationError(this.getNode(), 'URL must be an absolute public HTTP(S) URL');
+	const node = this.getNode();
+	const value = this.getNodeParameter('url', itemIndex, '');
+	const legacy = node.typeVersion === 1;
+	let url: URL | undefined;
+	let hasCredentials = false;
+	if (typeof value === 'string') {
+		try {
+			url = new URL(legacy ? value.trim() : value);
+			hasCredentials = Boolean(url.username || url.password);
+		} catch {
+			// Even malformed URL authorities can contain credentials.
+			const candidate = value.replace(/[\t\r\n]/g, '').replace(/^[\s\p{Cc}]+/u, '');
+			hasCredentials = /^(?:[a-z][a-z\d+.-]*:[/\\]+|https?:|[/\\]{2,})[^/\\?#]+@/i.test(candidate);
+		}
 	}
-	if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+	if (legacy && !url) {
+		throw new NodeOperationError(node, 'URL must be an absolute public HTTP(S) URL');
+	}
+	if (legacy && (hasCredentials || (url?.protocol !== 'http:' && url?.protocol !== 'https:'))) {
 		throw new NodeOperationError(
-			this.getNode(),
+			node,
 			'URL must use HTTP(S) and must not contain embedded credentials',
 		);
 	}
-	const envelope = await anySearchRequest.call(this, {
-		method: 'POST',
-		url: API_BASE_URL + '/v1/extract',
-		body: { url: (value as string).trim() },
-	});
+	if (hasCredentials) {
+		throw new NodeOperationError(node, 'URL must not contain embedded credentials');
+	}
+	const envelope = await anySearchRequest.call(
+		this,
+		{
+			method: 'POST',
+			url: API_BASE_URL + '/v1/extract',
+			body: { url: legacy && typeof value === 'string' ? value.trim() : value },
+		},
+		itemIndex,
+	);
 	const data = readDataObject(this.getNode(), envelope, 'extract');
 	if (
 		typeof data.url !== 'string' ||
@@ -456,20 +579,45 @@ async function extractOperation(
 	];
 }
 
+function validCapability(value: unknown): boolean {
+	const entry = objectValue(value);
+	if (typeof entry?.sub_domain !== 'string' || !CAPABILITY_TAG_PATTERN.test(entry.sub_domain)) {
+		return false;
+	}
+	if (entry.params === undefined) return true;
+	const params = objectValue(entry.params);
+	return (
+		!!params &&
+		Object.values(params).every((value) => {
+			const definition = objectValue(value);
+			return (
+				typeof definition?.required === 'boolean' &&
+				typeof definition.description === 'string' &&
+				(definition.sort_order === undefined || Number.isInteger(definition.sort_order))
+			);
+		})
+	);
+}
+
 async function fetchDomains(
 	this: AnySearchRequestContext,
 	selected?: string[],
+	itemIndex?: number,
 ): Promise<{ domains: IDataObject[]; requestId?: string }> {
 	let endpoint = '/v1/domains';
 	if (selected) {
 		const searchParams = new URLSearchParams();
 		for (const domain of selected) searchParams.append('domain', domain);
-		endpoint = '/v1/sub-domains?' + searchParams.toString();
+		endpoint = selected.length ? '/v1/sub-domains?' + searchParams.toString() : '/v1/sub-domains';
 	}
-	const envelope = await anySearchRequest.call(this, {
-		method: 'GET',
-		url: API_BASE_URL + endpoint,
-	});
+	const envelope = await anySearchRequest.call(
+		this,
+		{
+			method: 'GET',
+			url: API_BASE_URL + endpoint,
+		},
+		itemIndex,
+	);
 	const data = readDataObject(this.getNode(), envelope, 'capability');
 	const domains = readArrayField(
 		this.getNode(),
@@ -485,9 +633,7 @@ async function fetchDomains(
 				!domain.domain ||
 				(selected &&
 					(!Array.isArray(domain.sub_domains) ||
-						domain.sub_domains.some(
-							(entry) => typeof objectValue(entry)?.sub_domain !== 'string',
-						))),
+						domain.sub_domains.some((entry) => !validCapability(entry)))),
 		)
 	) {
 		throw apiError(
@@ -509,16 +655,21 @@ async function capabilityOperation(
 	}
 	const selected =
 		operation === 'getSubDomains'
-			? toStringArray(
-					this.getNode(),
-					this.getNodeParameter('domains', itemIndex, []),
-					'Domain Names or IDs',
-				)
+			? readDomains(this.getNode(), this.getNodeParameter('domains', itemIndex, []))
 			: undefined;
-	const { domains, requestId } = await fetchDomains.call(this, selected);
+	const { domains, requestId } = await fetchDomains.call(this, selected, itemIndex);
 	return domains.map((domain) => ({
 		json: { ...domain, ...(requestId ? { request_id: requestId } : {}) },
 		pairedItem: { item: itemIndex },
+	}));
+}
+
+function requiredInV1(property: INodeProperties): INodeProperties[] {
+	// In v2, missing REST fields must reach the service for a request ID and official error.
+	return [1, 2].map((version) => ({
+		...property,
+		required: version === 1,
+		displayOptions: { show: { ...property.displayOptions?.show, '@version': [version] } },
 	}));
 }
 
@@ -541,7 +692,8 @@ export class AnySearch implements INodeType {
 		name: 'anySearch',
 		icon: { light: 'file:anysearch.svg', dark: 'file:anysearch.dark.svg' },
 		group: ['transform'],
-		version: 1,
+		version: [1, 2],
+		defaultVersion: 2,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
 		description:
 			'Search the web with unified or vertical capability tags, and extract clean page content, via AnySearch',
@@ -620,11 +772,10 @@ export class AnySearch implements INodeType {
 				description:
 					'JSON array of 1–5 objects with query and optional tag, params, max_results, zone, language, and format. Each query returns a result or an error in input order.',
 			},
-			{
+			...requiredInV1({
 				displayName: 'Query',
 				name: 'query',
 				type: 'string',
-				required: true,
 				displayOptions: {
 					show: {
 						resource: ['search'],
@@ -633,8 +784,8 @@ export class AnySearch implements INodeType {
 				},
 				default: '',
 				placeholder: 'e.g. Go 1.26 release notes',
-				description: 'The search query',
-			},
+				description: 'AnySearch requires a non-empty search query',
+			}),
 			{
 				displayName: 'Options',
 				name: 'options',
@@ -754,11 +905,10 @@ export class AnySearch implements INodeType {
 				],
 				default: 'extract',
 			},
-			{
+			...requiredInV1({
 				displayName: 'URL',
 				name: 'url',
 				type: 'string',
-				required: true,
 				displayOptions: {
 					show: {
 						resource: ['extract'],
@@ -767,8 +917,8 @@ export class AnySearch implements INodeType {
 				},
 				default: '',
 				placeholder: 'https://example.com/article',
-				description: 'Public HTTP(S) URL to extract content from',
-			},
+				description: 'AnySearch requires a public absolute HTTP(S) URL',
+			}),
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -795,14 +945,13 @@ export class AnySearch implements INodeType {
 				],
 				default: 'getDomains',
 			},
-			{
+			...requiredInV1({
 				displayName: 'Domain Names or IDs',
 				name: 'domains',
 				type: 'multiOptions',
 				typeOptions: {
 					loadOptionsMethod: 'getDomains',
 				},
-				required: true,
 				displayOptions: {
 					show: {
 						resource: ['capability'],
@@ -811,8 +960,8 @@ export class AnySearch implements INodeType {
 				},
 				default: [],
 				description:
-					'Domains to inspect, e.g. code, finance. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-			},
+					'AnySearch requires at least one domain, e.g. code or finance. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			}),
 		],
 	};
 

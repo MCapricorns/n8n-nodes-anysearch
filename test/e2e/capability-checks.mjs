@@ -6,15 +6,13 @@ const cases = [
 	{
 		query: 'CA981',
 		tag: 'travel.flight_status',
-		params: { flight_number: 'CA981' },
-		sent: { flight_number: 'CA981', departure: '' },
+		params: { flight_number: 'CA981', departure: 'PEK', date: '2026-11-26', type: 'FlightStatus' },
 		result: /CA981.*PEK\s*→\s*JFK/i,
 	},
 	{
 		query: 'AAPL',
 		tag: 'finance.fundamental',
-		params: { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
-		sent: { type: 'overview', symbol: 'AAPL', cn_code: '' },
+		params: { type: 'overview', symbol: 'AAPL', cn_code: '' },
 		result: /AAPL.*Fundamental/i,
 	},
 	{
@@ -25,16 +23,16 @@ const cases = [
 		missing: ['flight_number'],
 	},
 	{
-		query: 'Player region missing',
-		tag: 'gaming.esports',
-		params: { type: 'player', game_name: 'Hide on Bush#KR1' },
-		missing: ['region'],
+		query: 'Flight departure missing',
+		tag: 'travel.flight_status',
+		params: { flight_number: 'CA981' },
+		status: 400,
+		missing: ['departure'],
 	},
 	{
 		query: '贵州茅台 利润表',
 		tag: 'finance.fundamental',
-		params: { type: 'income', cn_code: '600519.SH', symbol: 'AAPL' },
-		sent: { type: 'income', cn_code: '600519.SH', symbol: '' },
+		params: { type: 'income', cn_code: '600519.SH', symbol: '' },
 		result: /600519.*利润表/i,
 	},
 	{
@@ -55,65 +53,17 @@ const cases = [
 		missing: ['departure', 'arrival', 'date'],
 	},
 	{
-		query: 'Crypto symbol missing',
-		tag: 'finance.quote',
-		params: { type: 'crypto' },
-		missing: ['symbol'],
+		query: 'Overview ticker keys missing',
+		tag: 'finance.fundamental',
+		params: { type: 'overview' },
+		status: 400,
+		missing: ['symbol', 'cn_code'],
 	},
 	{
 		query: 'Upcoming company earnings',
 		tag: 'finance.calendar',
-		params: { type: 'earnings', symbol: 'AAPL', period: '7d' },
-		sent: { type: 'earnings', symbol: 'AAPL', period: '90d' },
+		params: { type: 'earnings', symbol: 'AAPL', period: '90d' },
 		result: /earnings/i,
-	},
-	...['ranked', 'mastery', 'live_game', 'leaderboard'].map((type) => ({
-		query: type + ' without a region',
-		tag: 'gaming.esports',
-		params: { type, game_name: 'Hide on Bush#KR1' },
-		missing: ['region'],
-	})),
-	{
-		query: 'Player name missing',
-		tag: 'gaming.esports',
-		params: { type: 'player', region: 'kr' },
-		missing: ['game_name'],
-	},
-	{
-		query: 'Match ID missing',
-		tag: 'gaming.esports',
-		params: { type: 'match_detail' },
-		missing: ['match_id'],
-	},
-	{
-		query: 'Tier missing for division',
-		tag: 'gaming.esports',
-		params: { type: 'leaderboard', region: 'kr', division: 'I' },
-		missing: ['tier'],
-	},
-	{
-		query: 'Single citation requires an OCI',
-		tag: 'academic.citation',
-		params: { op: 'citation', id: '10.1038/s41586-021-03819-2' },
-		missing: ['OCI', 'id'],
-	},
-	{
-		query: 'Malformed match ID',
-		tag: 'gaming.esports',
-		params: { type: 'match_detail', match_id: 'garbage' },
-		missing: ['match_id'],
-	},
-	{
-		query: 'Boolean leaderboard division',
-		tag: 'gaming.esports',
-		params: { type: 'leaderboard', region: 'kr', tier: 'GOLD', division: false },
-		missing: ['division'],
-	},
-	{
-		query: 'Zero-day stock quote',
-		tag: 'finance.quote',
-		params: { type: 'stock', symbol: 'AAPL', period: '000d' },
-		missing: ['period'],
 	},
 ];
 
@@ -122,8 +72,7 @@ function checkItem(entry, item) {
 		assert.equal(typeof item.error, 'string');
 		for (const field of entry.missing) assert(item.error.includes(field), item.error);
 		assert.equal(item.details.http_status, entry.status);
-		if (entry.status) assert(item.details.request_id);
-		else assert.equal(item.details.request_id, undefined);
+		assert(item.details.request_id);
 		return;
 	}
 	assert(!item.error, item.error);
@@ -201,11 +150,6 @@ export function checkCapabilityRequests(requests, tests) {
 				const sent = requests.filter(
 					(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
 				);
-				if (entry.missing && !entry.status) {
-					assert.equal(sent.length, 0, 'Locally invalid parameters reached HTTP');
-					assert.equal(item.request_id, undefined, 'Local failure has a request ID');
-					continue;
-				}
 				assert.equal(sent.length, 1, 'Expected exactly one HTTP request');
 				const [request] = sent;
 				assert(
@@ -221,7 +165,7 @@ export function checkCapabilityRequests(requests, tests) {
 				assert.deepEqual(request.body, {
 					query: entry.query,
 					tag: entry.tag,
-					params: entry.sent ?? entry.params,
+					params: entry.params,
 					max_results: 1,
 				});
 				assert.equal(request.status, entry.status ?? 200, entry.query);

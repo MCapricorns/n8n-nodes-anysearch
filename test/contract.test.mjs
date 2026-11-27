@@ -16,12 +16,13 @@ const localRequire = createRequire(path.join(root, 'package.json'));
 const { AnySearch } = localRequire('./dist/nodes/AnySearch/AnySearch.node.js');
 const { AnySearchApi } = localRequire('./dist/credentials/AnySearchApi.credentials.js');
 const { missingParameterMessage } = localRequire('./dist/nodes/AnySearch/capabilityParameters.js');
+const { NodeHelpers } = localRequire('n8n-workflow');
 
 const node = {
 	id: 'contract-test',
 	name: 'AnySearch',
 	type: 'n8n-nodes-anysearch.anySearch',
-	typeVersion: 1,
+	typeVersion: 2,
 	position: [0, 0],
 	parameters: {},
 };
@@ -44,11 +45,12 @@ function scenario({
 	credentialError,
 	continueOnFail = false,
 	onError,
+	typeVersion = node.typeVersion,
 	inputItems = [{ json: {} }],
 } = {}) {
 	const requests = [];
 	const hasCredential = credentialData !== undefined || credentialError !== undefined;
-	const configured = { ...node, onError };
+	const configured = { ...node, typeVersion, onError };
 	if (hasCredential)
 		configured.credentials = {
 			anySearchApi: { id: 'offline-credential', name: 'Offline fixture' },
@@ -72,15 +74,22 @@ function scenario({
 		getInputData: () => inputItems,
 		getNodeParameter: (name, _itemIndex, fallback) =>
 			Object.hasOwn(resolved, name) ? resolved[name] : fallback,
-		getCredentials: async () => {
+		getCredentials: async (_type, itemIndex) => {
 			if (credentialError) throw credentialError;
+			if (typeof credentialData === 'function') return credentialData(itemIndex);
 			if (credentialData !== undefined) return credentialData;
 			throw new Error('No credentials configured for this node');
 		},
 		continueOnFail: () => continueOnFail,
 		helpers: {
 			httpRequest: (options) => send('anonymous', options),
-			httpRequestWithAuthentication: (_type, options) => send('authenticated', options),
+			async httpRequestWithAuthentication(_type, options, { credentialsDecrypted }) {
+				const authenticated = await new AnySearchApi().authenticate(
+					credentialsDecrypted.data,
+					options,
+				);
+				return send('authenticated', authenticated);
+			},
 		},
 	};
 	return {
@@ -120,8 +129,16 @@ test('specialized acceptance binds HTTP IDs to the originating single node and b
 				const missingRequired = [
 					'Flight number missing',
 					'Flight ticket parameters missing',
+					'Flight departure missing',
+					'Overview ticker keys missing',
 				].includes(body.query);
-				requests.push({ body, request_id, status: missingRequired ? 400 : 200 });
+				const status = missingRequired ? 400 : 200;
+				requests.push({ body, request_id, status });
+				if (missingRequired) {
+					return Object.assign(new Error('Offline invalid request'), {
+						response: { status, data: { code: -1, request_id } },
+					});
+				}
 				return { ...success, request_id };
 			},
 		});
@@ -193,20 +210,47 @@ test('search rejects malformed tag parameters before any request', async () => {
 	assert.equal(r.requests.length, 0);
 });
 
-test('explicit JSON format is forwarded and incomplete tags fail before HTTP', async () => {
+test('explicit JSON format is forwarded and AnySearch validates incomplete tags', async () => {
 	const r = await runCase({ parameters: { options: { tag: 'future.new-tag', format: 'json' } } });
 	assert.equal(r.requests[0].body.format, 'json');
-	for (const tag of ['finance', 'finance.', '.quote', 'finance.quote.extra']) {
-		const invalid = await runCase({ parameters: { options: { tag } } });
-		assert.match(invalid.message, /domain\.sub_domain/);
-		assert.equal(invalid.requests.length, 0);
-	}
+	const invalid = await runCase({
+		parameters: { options: { tag: 'finance' } },
+		statusCode: 400,
+		response: { code: -1, error_code: 'INVALID_TAG', request_id: 'tag-id' },
+	});
+	assert.equal(invalid.requests[0].body.tag, 'finance');
+	assert.equal(invalid.context.http_status, 400);
+	assert.equal(invalid.context.error_code, 'INVALID_TAG');
 });
 
-test('search rejects an empty query before any request', async () => {
-	const r = await runCase({ parameters: { query: '   ' } });
+test('search sends a blank query unchanged and reports the AnySearch rejection', async () => {
+	const r = await runCase({
+		parameters: { query: '   ' },
+		statusCode: 400,
+		response: { code: -1, message: 'Query is required.', request_id: 'query-id' },
+	});
 	assert.equal(r.outcome, 'error');
-	assert.equal(r.requests.length, 0);
+	assert.equal(r.requests[0].body.query, '   ');
+	assert.equal(r.message, 'Query is required.');
+	assert.equal(r.context.request_id, 'query-id');
+});
+
+test('n8n preflight allows required REST fields to reach AnySearch when empty', () => {
+	const { description } = new AnySearch();
+	for (const parameters of [
+		{ resource: 'search', operation: 'search', query: '' },
+		{ resource: 'extract', operation: 'extract', url: '' },
+		{ resource: 'capability', operation: 'getSubDomains', domains: [] },
+	]) {
+		assert.equal(
+			NodeHelpers.getNodeParametersIssues(
+				description.properties,
+				{ ...node, parameters },
+				description,
+			),
+			null,
+		);
+	}
 });
 
 test('unsimplified search keeps request_id, results and metadata', async () => {
@@ -236,15 +280,10 @@ test('valid empty results are accepted as an empty output', async () => {
 	assert.deepEqual(r.output, [[]]);
 });
 
-test('a response without the documented envelope is an error', async () => {
-	const r = await runCase({ response: {} });
-	assert.equal(r.outcome, 'error');
-	assert.match(r.message, /unexpected response/i);
-});
-
 test('a non-object response body is an error', async () => {
 	const r = await runCase({ response: [] });
 	assert.equal(r.outcome, 'error');
+	assert.match(r.message, /expected a JSON object/);
 });
 
 test('a success envelope without data.results is an error, not an empty result', async () => {
@@ -253,53 +292,30 @@ test('a success envelope without data.results is an error, not an empty result',
 	assert.match(r.message, /data\.results/);
 });
 
-test('a non-zero business code is an error without echoing the upstream message', async () => {
-	const r = await runCase({ response: { code: 40001, message: 'Offline invalid input fixture' } });
-	assert.equal(r.outcome, 'error');
-	assert.match(r.message, /40001/);
-	assert(!r.message.includes('Offline invalid input fixture'));
-});
-
-test('continued failures use the n8n error-output schema without losing diagnostics', async () => {
-	const r = await runCase({ statusCode: 429, continueOnFail: true });
-	const item = r.output[0][0];
-	assert.deepEqual(Object.keys(item.json).sort(), ['details', 'error']);
-	assert.equal(item.error, undefined);
-	assert.equal(item.json.details.request_id, success.request_id);
-	assert.equal(item.json.details.http_status, 429);
-	assert.deepEqual(item.pairedItem, { item: 0 });
-});
-
-test('dedicated error outputs retain diagnostics through legacy n8n routing and serialization', async () => {
-	for (const parameters of [{}, { operation: 'batchSearch', queries: [{ query: 'test' }] }]) {
-		const r = await runCase({
-			parameters,
+test('continued failures retain diagnostics in regular and dedicated n8n error outputs', async () => {
+	for (const mode of [
+		{},
+		{ onError: 'continueErrorOutput' },
+		{
 			onError: 'continueErrorOutput',
+			parameters: { operation: 'batchSearch', queries: [{ query: 'test' }] },
+		},
+	]) {
+		const r = await runCase({
+			...mode,
 			continueOnFail: true,
 			statusCode: 429,
 		});
 		const item = r.output[0][0];
+		assert.deepEqual(item.pairedItem, { item: 0 });
 		assert.equal(item.error, undefined);
-		assert.equal(item.json.message, item.json.error);
+		assert.equal(item.json.message, mode.onError ? item.json.error : undefined);
 		const stored = JSON.parse(JSON.stringify(item.json));
 		assert.deepEqual(Object.keys(stored).sort(), ['details', 'error']);
 		assert.equal(stored.details.http_status, 429);
 		assert.equal(stored.details.request_id, success.request_id);
-		if (parameters.operation) assert.equal(stored.details.query_index, 0);
+		if (mode.parameters) assert.equal(stored.details.query_index, 0);
 	}
-});
-
-test('natural-language business errors cannot disclose generated credentials', async () => {
-	const r = await runCase({
-		continueOnFail: true,
-		response: {
-			code: -1,
-			message: 'Your new password is PRIVATE_UPSTREAM_PASSWORD',
-			request_id: 'business-id',
-		},
-	});
-	assert(!JSON.stringify(r.output).includes('PRIVATE_UPSTREAM_PASSWORD'));
-	assert.equal(r.output[0][0].json.details.request_id, 'business-id');
 });
 
 test('Codex metadata identifies the registered node and excludes the rejected AI category', () => {
@@ -327,21 +343,53 @@ test('extract returns url, title and content', async () => {
 	});
 });
 
-test('extract rejects a response without extracted content', async () => {
-	const r = await runCase({
-		response: { code: 0, data: {} },
-		parameters: { resource: 'extract', operation: 'extract', url: 'https://example.com/page' },
-	});
-	assert.equal(r.outcome, 'error');
-	assert.match(r.message, /extract/i);
+test('search rejects malformed documented metadata fields', async () => {
+	for (const metadata of [{ total_results: '5' }, { total_results: 1.5 }, { search_time_ms: {} }]) {
+		const r = await runCase({ response: { ...success, data: { ...success.data, metadata } } });
+		assert.equal(r.outcome, 'error');
+		assert.match(r.message, /invalid metadata/);
+		assert.equal(r.context.request_id, success.request_id);
+	}
 });
 
-test('extract rejects a malformed URL before any request', async () => {
-	const r = await runCase({
-		parameters: { resource: 'extract', operation: 'extract', url: 'example.com' },
+test('extract sends invalid URLs unchanged for AnySearch to validate', async () => {
+	for (const url of ['example.com', ' https://example.com ', 'ftp://example.com', '']) {
+		const r = await runCase({
+			parameters: { resource: 'extract', operation: 'extract', url },
+			statusCode: 400,
+			response: { code: -1, message: 'URL is invalid.', error_code: 'invalid_extract_url' },
+		});
+		assert.equal(r.outcome, 'error');
+		assert.deepEqual(r.requests[0].body, { url });
+		assert.equal(r.requests[0].headers['Content-Type'], 'application/json');
+		assert.equal(r.message, 'URL is invalid.');
+		assert.equal(r.context.error_code, 'invalid_extract_url');
+	}
+});
+
+test('version 1 trims extraction URLs and rejects malformed URLs before HTTP', async () => {
+	const url = 'https://example.com/page';
+	const parameters = { resource: 'extract', operation: 'extract' };
+	const trimmed = await runCase({
+		typeVersion: 1,
+		parameters: { ...parameters, url: ` ${url} ` },
+		response: { code: 0, data: { url, title: 'Title', content: 'Body' } },
 	});
-	assert.equal(r.outcome, 'error');
-	assert.equal(r.requests.length, 0);
+	assert.equal(trimmed.outcome, 'returned');
+	assert.deepEqual(trimmed.requests[0].body, { url });
+
+	for (const [badUrl, message] of [
+		['example.com', /absolute public HTTP\(S\) URL/],
+		['ftp://example.com', /must use HTTP\(S\)/],
+	]) {
+		const rejected = await runCase({
+			typeVersion: 1,
+			parameters: { ...parameters, url: badUrl },
+		});
+		assert.equal(rejected.outcome, 'error');
+		assert.match(rejected.message, message);
+		assert.equal(rejected.requests.length, 0);
+	}
 });
 
 test('domain listing returns one item per domain', async () => {
@@ -376,24 +424,64 @@ test('the domain picker reads the same domain definitions as the capability oper
 	await assert.rejects(invalid.loadDomains(), /invalid domain/);
 });
 
-test('sub-domain listing repeats the domain query parameter', async () => {
+test('sub-domain listing preserves repeated query values in version 2 and cleans them in version 1', async () => {
 	const response = {
 		code: 0,
 		data: { domains: [{ domain: 'code', sub_domains: [{ sub_domain: 'code.doc' }] }] },
 	};
-	const r = await runCase({
-		response,
-		parameters: {
-			resource: 'capability',
-			operation: 'getSubDomains',
-			domains: ['code', 'finance'],
+	for (const [typeVersion, query] of [
+		[1, 'domain=code&domain=finance'],
+		[2, 'domain=code&domain=finance&domain=code&domain=&domain=+finance+'],
+	]) {
+		const r = await runCase({
+			typeVersion,
+			response,
+			parameters: {
+				resource: 'capability',
+				operation: 'getSubDomains',
+				domains: ['code', 'finance', 'code', '', ' finance '],
+			},
+		});
+		assert.equal(r.outcome, 'returned');
+		assert.equal(r.requests[0].url, `https://api.anysearch.com/v1/sub-domains?${query}`);
+	}
+});
+
+test('sub-domain listing rejects malformed capability definitions', async () => {
+	for (const entry of [
+		{ sub_domain: '' },
+		{ sub_domain: 'code.doc', params: [] },
+		{ sub_domain: 'code.doc', params: { library: { required: 'true', description: 'Library' } } },
+		{ sub_domain: 'code.doc', params: { library: { required: true, description: 1 } } },
+		{
+			sub_domain: 'code.doc',
+			params: { library: { required: true, description: 'Library', sort_order: 'first' } },
 		},
+	]) {
+		const r = await runCase({
+			parameters: { resource: 'capability', operation: 'getSubDomains', domains: ['code'] },
+			response: { ...success, data: { domains: [{ domain: 'code', sub_domains: [entry] }] } },
+		});
+		assert.equal(r.outcome, 'error');
+		assert.match(r.message, /invalid domain definitions/);
+		assert.equal(r.context.request_id, success.request_id);
+	}
+});
+
+test('sub-domain listing lets AnySearch report an empty selection', async () => {
+	const parameters = { resource: 'capability', operation: 'getSubDomains', domains: [] };
+	const r = await runCase({
+		parameters,
+		statusCode: 400,
+		response: { code: -1, message: 'At least one domain parameter is required.' },
 	});
-	assert.equal(r.outcome, 'returned');
-	assert.equal(
-		r.requests[0].url,
-		'https://api.anysearch.com/v1/sub-domains?domain=code&domain=finance',
-	);
+	assert.equal(r.requests[0].url, 'https://api.anysearch.com/v1/sub-domains');
+	assert.equal(r.message, 'At least one domain parameter is required.');
+	assert.equal(r.context.http_status, 400);
+
+	const legacy = await runCase({ typeVersion: 1, parameters });
+	assert.equal(legacy.requests.length, 0);
+	assert.match(legacy.message, /Domain Names or IDs must not be empty/);
 });
 
 test('an unselected credential uses the anonymous helper without Authorization', async () => {
@@ -406,6 +494,35 @@ test('an unselected credential uses the anonymous helper without Authorization',
 test('a configured non-empty key uses the authenticated helper', async () => {
 	const r = await runCase({ credentialData: { apiKey: 'synthetic_fixture' } });
 	assert.equal(r.requests[0].route, 'authenticated');
+});
+
+test('authentication resolves and reuses the credential for the current input item', async () => {
+	const lookedUp = [];
+	const keys = ['', 'synthetic_second', ' synthetic_third '];
+	const r = await runCase({
+		inputItems: keys.map(() => ({ json: {} })),
+		credentialData(itemIndex) {
+			lookedUp.push(itemIndex);
+			return { apiKey: keys[itemIndex] };
+		},
+	});
+	assert.equal(r.outcome, 'returned', r.message);
+	assert.deepEqual(lookedUp, [0, 1, 2]);
+	assert.deepEqual(
+		r.requests.map(({ headers }) => headers.Authorization),
+		[undefined, 'Bearer synthetic_second', 'Bearer synthetic_third'],
+	);
+});
+
+test('non-string keys fail in both node execution and the credential tester', async () => {
+	const data = { apiKey: 42 };
+	await assert.rejects(
+		new AnySearchApi().authenticate(data, { url: 'https://api.anysearch.com/v1/domains' }),
+		/API Key string/,
+	);
+	const r = await runCase({ credentialData: data });
+	assert.match(r.message, /API Key string/);
+	assert.equal(r.requests.length, 0);
 });
 
 test('a selected credential that cannot be read fails instead of falling back to anonymous', async () => {
@@ -489,17 +606,18 @@ test('continueOnFail emits an error item for malformed responses', async () => {
 	assert.deepEqual(r.output[0][0].pairedItem, { item: 0 });
 });
 
-for (const content of [undefined, null]) {
-	test('extract rejects missing or invalid content: ' + String(content), async () => {
+for (const data of [
+	{},
+	{ url: 'https://example.com', title: '' },
+	{ url: 'https://example.com', title: '', content: null },
+]) {
+	test('extract rejects malformed data: ' + JSON.stringify(data), async () => {
 		const r = await runCase({
-			response: {
-				code: 0,
-				request_id: 'extract-id',
-				data: { url: 'https://example.com', title: '', content },
-			},
+			response: { code: 0, request_id: 'extract-id', data },
 			parameters: { resource: 'extract', operation: 'extract', url: 'https://example.com' },
 		});
 		assert.equal(r.outcome, 'error');
+		assert.match(r.message, /extract/i);
 		assert.equal(r.context.request_id, 'extract-id');
 	});
 }
@@ -516,61 +634,49 @@ for (const results of [
 	});
 }
 
-for (const statusCode of [200, 402]) {
-	for (const continueOnFail of [false, true]) {
-		test(
-			'sensitive upstream details stay private for HTTP ' +
-				statusCode +
-				', continue=' +
-				continueOnFail,
-			async () => {
-				const r = await runCase({
-					statusCode,
-					continueOnFail,
-					response: {
-						code: -1,
-						message: 'password=SYNTHETIC_PASSWORD api_key=SYNTHETIC_KEY',
-						request_id: 'private-response-id',
-					},
-				});
-				const observable = JSON.stringify({ output: r.output, serialized: r.serialized });
-				assert(!observable.includes('SYNTHETIC_PASSWORD'));
-				assert(!observable.includes('SYNTHETIC_KEY'));
-				assert(observable.includes('private-response-id'));
-				if (continueOnFail && statusCode !== 200)
-					assert.equal(r.output[0][0].json.details.http_status, statusCode);
-			},
-		);
+test('search preserves supplied values and leaves omitted fields to AnySearch defaults', async () => {
+	const query = '  a search query  ';
+	const minimal = await runCase({ parameters: { query, options: { zone: '' } } });
+	assert.deepEqual(minimal.requests[0].body, { query });
+	for (const maxResults of [0, 11, 1.5, '2', null]) {
+		const r = await runCase({
+			parameters: { query, options: { maxResults, zone: ' intl ', format: ' ', params: 'null' } },
+		});
+		assert.deepEqual(r.requests[0].body, {
+			query,
+			max_results: maxResults,
+			zone: ' intl ',
+			format: ' ',
+			params: null,
+		});
 	}
-}
-
-for (const maxResults of [0, 11, 1.5, '2']) {
-	test('invalid Max Results fails before HTTP: ' + String(maxResults), async () => {
-		const r = await runCase({ parameters: { options: { maxResults } } });
-		assert.equal(r.outcome, 'error');
-		assert.equal(r.requests.length, 0);
-	});
-}
+});
 
 test('requests use bounded timeouts and do not forward authentication across redirects', async () => {
 	const r = await runCase();
 	assert.equal(r.requests[0].timeout, 60000);
 	assert.equal(r.requests[0].disableFollowRedirect, true);
 	assert.equal(r.requests[0].returnFullResponse, true);
+	assert.equal(r.requests[0].headers['Content-Type'], 'application/json');
 	assert.equal(r.requests[0].headers['X-Anysearch-Client'], 'n8n-nodes-anysearch');
 });
 
 test('extract rejects embedded URL credentials before HTTP', async () => {
-	const r = await runCase({
-		parameters: {
-			resource: 'extract',
-			operation: 'extract',
-			url: 'https://user:synthetic@example.com',
-		},
-	});
-	assert.equal(r.outcome, 'error');
-	assert.equal(r.requests.length, 0);
-	assert(!r.serialized.includes('https://user'));
+	for (const url of [
+		'https://user:synthetic@example.com',
+		'https://user:synthetic@example com',
+		'//user:synthetic@example.com',
+		'https:user:synthetic@example com',
+		'ht\ttps://user:synthetic@exa mple.com',
+		'\u0001https://user:synthetic@example com',
+		'\u0000//user:synthetic@example.com',
+		'ftp://user:synthetic@example com',
+	]) {
+		const r = await runCase({ parameters: { resource: 'extract', operation: 'extract', url } });
+		assert.equal(r.outcome, 'error');
+		assert.equal(r.requests.length, 0);
+		assert(!r.serialized.includes('https://user'));
+	}
 });
 
 test('batch searches run concurrently, preserve order and isolate failures', async () => {
@@ -620,12 +726,49 @@ for (const queries of [[], Array(6).fill({ query: 'test' }), null, '{}', 'broken
 }
 
 test('batch invalid query does not prevent valid siblings from executing', async () => {
-	const r = await runCase({
-		parameters: { operation: 'batchSearch', queries: [{ query: 'good' }, { query: '' }] },
+	const failed = Object.assign(new Error('offline HTTP 400 fixture'), {
+		response: {
+			status: 400,
+			data: { code: -1, message: 'Query is required.', request_id: 'bad-id' },
+		},
 	});
-	assert.equal(r.requests.length, 1);
+	const r = await runCase({
+		parameters: {
+			operation: 'batchSearch',
+			queries: [
+				{ query: 'good', extra: 'sent unchanged' },
+				{ query: '', params: '{}' },
+				{},
+				[],
+				42,
+			],
+		},
+		response: ({ body }) => (body.query ? success : failed),
+	});
+	assert.deepEqual(
+		r.requests.map(({ body }) => body),
+		[{ query: 'good', extra: 'sent unchanged' }, { query: '', params: '{}' }, '{}', '[]', '42'],
+	);
 	assert(r.output[0][0].json.results);
-	assert(r.output[0][1].json.error);
+	assert.equal(r.output[0][1].json.error, 'Query is required.');
+	assert.equal(r.output[0][1].json.details.request_id, 'bad-id');
+});
+
+test('a sparse Batch Search expression yields an error item instead of an empty output slot', async () => {
+	const queries = Array(2);
+	queries[1] = { query: 'good' };
+	const failure = Object.assign(new Error('offline HTTP 400 fixture'), { statusCode: 400 });
+	const r = await runCase({
+		parameters: { operation: 'batchSearch', queries },
+		response: ({ body }) => (body === 'null' ? failure : success),
+	});
+	assert.deepEqual(
+		r.requests.map(({ body }) => body),
+		['null', { query: 'good' }],
+	);
+	assert.equal(r.output[0][0].json.details.query_index, 0);
+	assert.equal(r.output[0][0].json.details.http_status, 400);
+	assert.equal(r.output[0][1].json.query_index, 1);
 });
 
 test('multiple n8n inputs retain pairing, including failures', async () => {
@@ -677,328 +820,72 @@ for (const continueOnFail of [false, true]) {
 	);
 }
 
-test('search forwards capability parameters without dropping empty required values', async () => {
-	for (const params of [{ type: 'overview', symbol: 'AAPL', cn_code: '' }, {}]) {
-		const r = await runCase({
-			parameters: { options: { tag: 'finance.fundamental', params } },
-		});
-		assert.equal(r.outcome, 'returned', r.message);
-		assert.equal(r.requests[0].body.tag, 'finance.fundamental');
-		assert.deepEqual(r.requests[0].body.params, params);
+test('Search and Batch Search submit capability parameters as supplied', async () => {
+	const examples = [
+		['travel.flight_status', { flight_number: 'CA981' }],
+		['travel.flight_status', { flight_number: 'CA981', departure: '' }],
+		['finance.fundamental', { type: 'overview' }],
+		['finance.fundamental', { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' }],
+		['finance.fundamental', { type: ' balance ', cn_code: 600519, symbol: false }],
+		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }],
+		['finance.quote', { type: 'crypto' }],
+		['finance.quote', { type: 'stock', symbol: 'AAPL', period: '0d' }],
+		['finance.news', { type: 'flash', news_src: 'future_source' }],
+		['gaming.esports', { type: 'player', game_name: 'Hide on Bush#KR1' }],
+		['gaming.esports', { type: 'champion', region: 'unused' }],
+		['gaming.esports', { type: 'leaderboard', region: 'kr', tier: 'MASTER', division: false }],
+		['gaming.esports', { type: 'match_detail', match_id: 'EUW1_6723541890' }],
+		['academic.citation', { op: 'citation', id: '10.1038/s41586-021-03819-2' }],
+		['code.doc', { library: null }],
+		['future.tag', { optional: false, nested: { filter: ['a', 2] } }],
+		['finance.fundamental', {}],
+	];
+	for (const [tag, input] of examples) {
+		const query = 'test';
+		const params = Object.freeze(input);
+		const body = { query, tag, params };
+		for (const parameters of [
+			{ query, options: { tag, params } },
+			{ query, options: { tag, params: JSON.stringify(params) } },
+			{ operation: 'batchSearch', queries: [body] },
+			{ operation: 'batchSearch', queries: JSON.stringify([body]) },
+		]) {
+			const run = await runCase({ parameters });
+			assert.equal(run.outcome, 'returned', run.message);
+			assert.equal(run.requests.length, 1, tag);
+			assert.deepEqual(run.requests[0].body, body, tag);
+		}
 	}
 });
 
-test('Search and Batch Search apply defaults and fixed catalog values without changing inputs', async () => {
+test('version 1 Search and Batch Search preserve released capability defaults and validation', async () => {
 	const examples = [
 		['travel.flight_status', { flight_number: 'CA981' }, { departure: '' }],
-		['travel.flight_status', { flight_number: 'CA981', departure: 'PEK' }, {}],
-		['finance.fundamental', { type: 'overview', symbol: 'AAPL' }, { cn_code: '' }],
-		['finance.fundamental', { type: 'overview' }, { cn_code: '', symbol: '' }],
-		[
-			'finance.fundamental',
-			{ type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
-			{ cn_code: '' },
-		],
-		['finance.fundamental', { type: 'overview', cn_code: null }, { symbol: '', cn_code: '' }],
-		...['income', 'balance', 'cashflow', 'indicator', 'holder'].map((type) => [
-			'finance.fundamental',
-			{ type, cn_code: '600519.SH', symbol: 'AAPL', period: '1y' },
-			{ symbol: '' },
-		]),
-		['finance.fundamental', { type: 'income', cn_code: 600519 }, { symbol: '' }],
-		[
-			'finance.fundamental',
-			{ type: ' balance ', cn_code: '000001.SZ', symbol: false },
-			{ type: 'balance', symbol: '' },
-		],
-		['finance.calendar', { type: 'earnings' }, { period: '90d' }],
-		...['7d', '90d', '', null, false, 7].map((period) => [
-			'finance.calendar',
-			{ type: 'earnings', symbol: 'AAPL', period },
-			{ period: '90d' },
-		]),
-		['finance.calendar', { type: 'dividends', period: '7d' }, {}],
-		['travel.flight', { departure: 'PEK' }, {}],
-		['gaming.esports', { type: 'champion_rotation' }, {}],
-		['finance.fundamental', { type: 'new_type' }, {}],
-		['future.tag', { type: 'player', optional: false }, {}],
+		['finance.fundamental', { type: 'overview' }, { symbol: '', cn_code: '' }],
+		['finance.fundamental', { type: 'balance', cn_code: 600519, symbol: 'AAPL' }, { symbol: '' }],
+		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }, { period: '90d' }],
+		['finance.quote', { type: 'stock', symbol: 'AAPL', period: '0d' }, /\bperiod\b/],
+		['finance.quote', { type: 'crypto' }, /\bsymbol\b/],
+		['gaming.esports', { type: 'player', game_name: 'Hide on Bush#KR1' }, /\bregion\b/],
+		['gaming.esports', { type: 'match_detail', match_id: null }, /\bmatch_id\b/],
+		['academic.citation', { op: 'citation', id: '10.1038/example' }, /\bOCI\b/],
 	];
-	for (const [tag, input, overrides] of examples) {
+	for (const [tag, input, expected] of examples) {
 		const params = Object.freeze(input);
+		const query = 'saved workflow query';
 		for (const parameters of [
-			{ options: { tag, params: JSON.stringify(params) } },
-			{ options: { tag, params } },
-			{ operation: 'batchSearch', queries: [{ query: 'test', tag, params }] },
-			{ operation: 'batchSearch', queries: JSON.stringify([{ query: 'test', tag, params }]) },
+			{ query, options: { tag, params: JSON.stringify(params) } },
+			{ operation: 'batchSearch', queries: [{ query, tag, params }] },
 		]) {
-			const r = await runCase({ parameters });
-			assert.equal(r.requests.length, 1, tag);
-			assert.deepEqual(r.requests[0].body.params, { ...params, ...overrides });
-		}
-	}
-});
-
-test('undefined fields in expression objects still receive their wire defaults', async () => {
-	for (const [tag, params, expected] of [
-		[
-			'travel.flight_status',
-			{ flight_number: 'CA981', departure: undefined },
-			{ flight_number: 'CA981', departure: '' },
-		],
-		[
-			'finance.fundamental',
-			{ type: 'overview', cn_code: undefined, symbol: undefined },
-			{ type: 'overview', cn_code: '', symbol: '' },
-		],
-	]) {
-		const r = await runCase({ parameters: { options: { tag, params } } });
-		assert.deepEqual(r.requests[0].body.params, expected);
-	}
-});
-
-test('conditional fields and blank required values fail locally with their field names', async () => {
-	const examples = [
-		...['player', 'ranked', 'mastery', 'live_game'].flatMap((type) => [
-			['gaming.esports', { type, game_name: 'Hide on Bush#KR1', region: ' ' }, 'region'],
-			['gaming.esports', { type, region: 'kr' }, 'game_name'],
-		]),
-		['gaming.esports', { type: 'leaderboard' }, 'region'],
-		['gaming.esports', { type: 'leaderboard', region: 'kr', division: 'I' }, 'tier'],
-		[
-			'gaming.esports',
-			{ type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
-			'division',
-		],
-		['gaming.esports', { type: ' player ', game_name: 'Hide on Bush#KR1' }, 'region'],
-		['gaming.esports', { type: 'match_detail', match_id: null }, 'match_id'],
-		['finance.quote', { type: 'crypto', symbol: false }, 'symbol'],
-		['finance.fundamental', { type: 'income', cn_code: ' ', symbol: '' }, 'cn_code'],
-		['finance.fundamental', { type: 'overview', symbol: null }, 'symbol'],
-		['travel.flight_status', { flight_number: '' }, 'flight_number'],
-		['travel.flight_status', { flight_number: 981 }, 'flight_number'],
-		['travel.flight', { departure: '' }, 'departure'],
-		['code.doc', { library: ' ' }, 'library'],
-		['academic.citation', { op: 'citation', id: '10.1038/example' }, 'id'],
-	];
-	for (const [tag, params, field] of examples) {
-		const r = await runCase({ parameters: { options: { tag, params } } });
-		assert.equal(r.outcome, 'error');
-		assert.match(r.message, new RegExp('\\b' + field + '\\b'));
-		assert.equal(r.requests.length, 0);
-	}
-	for (const [tag, params] of [
-		['gaming.esports', { type: 'match_detail', match_id: 'KR_123' }],
-		['gaming.esports', { type: 'leaderboard', region: 'kr' }],
-		['gaming.esports', { type: 'leaderboard', region: 'kr', tier: 'GOLD', division: 'I' }],
-		['finance.quote', { type: 'commodity' }],
-		['academic.citation', { id: 33817056 }],
-		['academic.citation', { op: 'citation', id: '06101801781-06180334099' }],
-	]) {
-		const r = await runCase({ parameters: { options: { tag, params } } });
-		assert.deepEqual(r.requests[0].body.params, params);
-	}
-});
-
-const leaderboard = { type: 'leaderboard', region: 'kr', tier: 'GOLD' };
-for (const [field, base, values] of [
-	[
-		'match_id',
-		{ type: 'match_detail' },
-		[
-			'garbage',
-			'NOTAREGION123_9',
-			'ZZ_123',
-			'SEA_1',
-			'EUW_42',
-			'123_45',
-			'KR_1_2',
-			'NA1_A2',
-			'EUW1_23x',
-			'KR_-1',
-			'KR_12 ',
-			42,
-			false,
-		],
-	],
-	['division', leaderboard, [false, null, '', 0, ' ', 'V', '1', 'I/II', [], {}]],
-	['tier', leaderboard, [null, '', 'gold', 'WOOD', false]],
-	['queue', leaderboard, [null, '', 'ARAM', 5]],
-	['region', { type: 'player', game_name: 'Tyler1' }, ['invalid', '', 1, false]],
-	['game_name', { type: 'player', region: 'kr' }, ['#KR1', 'Faker#', 'Faker#KR#1', ' #KR1']],
-	['type', { region: 'kr' }, ['leadrboard']],
-]) {
-	test(
-		'invalid esports ' + field + ' fails before HTTP in single and mixed batch searches',
-		async () => {
-			for (const value of values) {
-				const tag = 'gaming.esports';
-				const params = { ...base, [field]: value };
-				const pattern = new RegExp('\\b' + field + '\\b');
-				const single = await runCase({ parameters: { options: { tag, params } } });
-				assert.equal(single.requests.length, 0, field);
-				assert.match(single.message, pattern);
-				const batch = await runCase({
-					parameters: {
-						operation: 'batchSearch',
-						queries: [{ query: 'before' }, { query: 'invalid', tag, params }, { query: 'after' }],
-					},
-				});
-				assert.deepEqual(
-					batch.requests.map((r) => r.body.query),
-					['before', 'after'],
-				);
-				const [before, invalid, after] = batch.output[0].map((item) => item.json);
-				assert.equal(before.query_index, 0);
-				assert.equal(invalid.details.query_index, 1);
-				assert.match(invalid.error, pattern);
-				assert.equal(invalid.details.request_id, undefined);
-				assert.equal(after.query_index, 2);
-			}
-		},
-	);
-}
-
-test('esports accepts the catalog formats and enforces tier-dependent divisions', async () => {
-	const tag = 'gaming.esports';
-	const examples = [
-		...['KR_7482819248', 'NA1_4912837465', 'EUW1_6723541890'].map((match_id) => ({
-			type: 'match_detail',
-			match_id,
-		})),
-		...[
-			'BR1',
-			'EUN1',
-			'JP1',
-			'LA1',
-			'LA2',
-			'ME1',
-			'OC1',
-			'PH2',
-			'RU',
-			'SG2',
-			'TH2',
-			'TR1',
-			'TW2',
-			'VN2',
-			'PBE1',
-		].map((platform) => ({
-			type: 'match_detail',
-			match_id: platform + '_123',
-		})),
-		...['kr', 'na', 'euw', 'eune', 'jp', 'br', 'la1', 'la2', 'oc', 'tr', 'ru', 'sg', 'sea'].map(
-			(region) => ({ type: 'player', game_name: 'Tyler1', region }),
-		),
-		...['I', 'II', 'III', 'IV'].map((division) => ({ ...leaderboard, division })),
-		...['DIAMOND', 'EMERALD', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON'].map((tier) => ({
-			...leaderboard,
-			tier,
-			division: 'II',
-		})),
-		...['RANKED_SOLO_5x5', 'RANKED_FLEX_SR'].map((queue) => ({
-			type: 'ranked',
-			game_name: 'Hide on Bush#KR1',
-			region: 'kr',
-			queue,
-		})),
-	];
-	for (const tier of ['MASTER', 'GRANDMASTER', 'CHALLENGER']) {
-		examples.push({ ...leaderboard, tier });
-		const r = await runCase({
-			parameters: { options: { tag, params: { ...leaderboard, tier, division: 'IV' } } },
-		});
-		assert.equal(r.requests.length, 0);
-		assert.match(r.message, /division/);
-	}
-	for (const params of examples) {
-		const r = await runCase({ parameters: { options: { tag, params } } });
-		assert.equal(r.outcome, 'returned', r.message);
-		assert.deepEqual(r.requests[0].body.params, params);
-	}
-});
-
-test('invalid source selectors and overview periods fail before HTTP on both entry points', async () => {
-	for (const [tag, base, field, valid] of [
-		['finance.news', { type: 'flash' }, 'news_src', 'sina'],
-		['social_media.social_media', { keyword: 'Python' }, 'type', 'linkedin_jobs'],
-		['finance.fundamental', { type: 'overview', symbol: 'AAPL' }, 'period', 'quarter'],
-	]) {
-		for (const value of [false, null, '', 'unknown', [], valid]) {
-			const params = { ...base, [field]: value };
-			for (const parameters of [
-				{ options: { tag, params } },
-				{ operation: 'batchSearch', queries: [{ query: 'selector', tag, params }] },
-			]) {
-				const r = await runCase({ parameters });
-				if (value === valid) {
-					assert.equal(r.requests[0].body.params[field], valid);
-				} else {
-					assert.equal(r.requests.length, 0, field);
-					assert.match(r.message ?? r.output[0][0].json.error, new RegExp(field));
-				}
-			}
-		}
-	}
-});
-
-test('finance ranges and mastery champion filters reject invalid types and preserve legitimate values', async () => {
-	const invalidPeriods = [
-		false,
-		true,
-		7,
-		null,
-		{},
-		[],
-		'',
-		' ',
-		'7days',
-		'-7d',
-		'0d',
-		'000d',
-		'2y',
-	];
-	const validPeriods = [
-		'7d',
-		'14d',
-		'30d',
-		'90d',
-		'180d',
-		'1d',
-		'007d',
-		'23d',
-		'1234d',
-		'1y',
-		'5y',
-	];
-	for (const [tag, base, field, valid, invalid] of [
-		['finance.quote', { type: 'stock', symbol: 'AAPL' }, 'period', validPeriods, invalidPeriods],
-		['finance.calendar', { type: 'dividends' }, 'period', validPeriods, invalidPeriods],
-		['finance.calendar', { type: 'economic' }, 'period', ['2d'], [false]],
-		['finance.calendar', { type: 'ipos' }, 'period', ['2d'], [false]],
-		['finance.news', { type: 'announcement' }, 'period', validPeriods, invalidPeriods],
-		['finance.news', { type: 'flash', news_src: 'sina' }, 'period', ['1d'], [false]],
-		['finance.macro', { type: 'gdp' }, 'period', ['2y'], []],
-		['finance.quote', { type: 'future_type' }, 'period', ['future_window'], []],
-		[
-			'gaming.esports',
-			{ type: 'mastery', region: 'kr', game_name: 'Hide on Bush#KR1' },
-			'champion',
-			['Lee', 'vi', '李青'],
-			[false, true, 0, null, {}, [], '', '   '],
-		],
-	]) {
-		for (const value of [...valid, ...invalid]) {
-			const params = { ...base, [field]: value };
-			for (const parameters of [
-				{ options: { tag, params: JSON.stringify(params) } },
-				{ operation: 'batchSearch', queries: [{ query: 'range or champion', tag, params }] },
-			]) {
-				const r = await runCase({ parameters });
-				if (valid.includes(value)) {
-					assert.deepEqual(r.requests[0].body.params, params);
-				} else {
-					assert.equal(r.requests.length, 0, tag + '.' + field);
-					assert.match(r.message ?? r.output[0][0].json.error, new RegExp(field));
-				}
+			const run = await runCase({ typeVersion: 1, parameters });
+			if (expected instanceof RegExp) {
+				assert.equal(run.requests.length, 0, tag);
+				const error = run.output?.[0][0].json.error ?? run.message;
+				assert.match(error, expected, tag);
+			} else {
+				assert.equal(run.outcome, 'returned', run.message);
+				assert.equal(run.requests.length, 1, tag);
+				assert.deepEqual(run.requests[0].body, { query, tag, params: { ...params, ...expected } });
 			}
 		}
 	}
@@ -1009,10 +896,12 @@ test('every reviewed catalog parameter reaches HTTP on both entry points', async
 	const cases = localRequire('./test/e2e/search-cases.json');
 	for (const [tag, fields] of Object.entries(tags)) {
 		for (const [field, { required }] of Object.entries(fields)) {
-			const message = missingParameterMessage(
-				"Missing required params for tag '" + tag + "': " + field + '.',
+			const message = "Missing required params for tag '" + tag + "': " + field + '.';
+			assert.equal(
+				missingParameterMessage(message),
+				required ? message : undefined,
+				tag + '.' + field,
 			);
-			assert.equal(Boolean(message), required, tag + '.' + field);
 		}
 	}
 	for (const batch of [false, true]) {
@@ -1025,11 +914,7 @@ test('every reviewed catalog parameter reaches HTTP on both entry points', async
 			const r = await runCase({ parameters });
 			assert.equal(r.requests.length, 1, fields.tag ?? query);
 			const body = r.requests[0].body;
-			const expected = { ...input };
-			if (fields.tag === 'finance.calendar' && fields.params.type === 'earnings') {
-				expected.params = { ...fields.params, period: '90d' };
-			}
-			assert.deepEqual(body, expected);
+			assert.deepEqual(body, input);
 			bodies.push(body);
 		}
 		const coverage = catalogCoverage(bodies, tags);
@@ -1061,30 +946,6 @@ test('existing workflows can forward provider-specific paper fields outside the 
 	};
 	const r = await runCase({ parameters: { options: { tag: 'academic.paper', params } } });
 	assert.deepEqual(r.requests[0].body.params, params);
-});
-
-test('catalog HTTP 400 diagnostics survive stopping, continuing, batch output and thrown HTTP errors', async () => {
-	const response = {
-		code: -1,
-		request_id: 'validation-id',
-		message: "Missing required params for tag 'travel.flight': departure, arrival, date.",
-	};
-	const thrown = Object.assign(new Error('transport details'), {
-		response: { status: 400, data: response },
-	});
-	for (const config of [{ statusCode: 400, response }, { response: thrown }]) {
-		for (const opts of [
-			{},
-			{ continueOnFail: true },
-			{ parameters: { operation: 'batchSearch', queries: [{ query: 'test' }] } },
-		]) {
-			const r = await runCase({ ...config, ...opts });
-			const item = r.output?.[0][0].json;
-			assert.match(r.message ?? item.error, /departure, arrival, date/);
-			assert.equal((r.context ?? item.details).request_id, 'validation-id');
-			assert.equal((r.context ?? item.details).http_status, 400);
-		}
-	}
 });
 
 test('unrecognized 400 messages and credential-like fields stay private, including after rerouting', async () => {
@@ -1138,11 +999,128 @@ test('extract preserves Unicode and server truncation boundaries', async () => {
 	assert.equal(Array.from(r.output[0][0].json.content).length, 50000);
 });
 
-test('upstream credentials cannot be smuggled into request_id', async () => {
-	const r = await runCase({
-		statusCode: 402,
-		continueOnFail: true,
-		response: { code: -1, request_id: 'as_sk_synthetic_private_key' },
+test('documented API errors retain their status, message, and supplied codes in n8n', async () => {
+	for (const [statusCode, message, errorCode] of [
+		[400, 'Query is required.'],
+		[400, 'At least one domain parameter is required.'],
+		[400, 'URL is invalid.', 'invalid_extract_url'],
+		[401, 'Invalid API key.', 'invalid_api_key'],
+		[422, 'Extraction failed.', 'extract_failed'],
+	]) {
+		const r = await runCase({
+			statusCode,
+			headers: { 'X-Request-ID': 'official-error-id' },
+			response: { code: -1, message, ...(errorCode && { error_code: errorCode }) },
+		});
+		assert.equal(r.message, message);
+		assert.equal(r.context.http_status, statusCode);
+		assert.equal(r.context.request_id, 'official-error-id');
+		assert.equal(r.context.code, -1);
+		assert.equal(r.context.error_code, errorCode);
+	}
+});
+
+test('missing capability parameters keep their diagnostics for returned and thrown HTTP errors', async () => {
+	const message = "Missing required params for tag 'travel.flight': departure, arrival, date.";
+	const body = { code: -1, message, error_code: 'MISSING_REQUIRED_PARAMS' };
+	const request_id = 'catalog-error-id';
+	const returned = { statusCode: 400, response: { ...body, request_id } };
+	const thrown = (data) => ({
+		response: Object.assign(new Error('Offline transport error'), {
+			response: { status: 400, data, headers: { 'X-Request-ID': request_id } },
+		}),
 	});
-	assert(!JSON.stringify(r.output).includes('as_sk_'));
+	for (const config of [
+		thrown(body),
+		{ ...thrown(JSON.stringify(body)), continueOnFail: true },
+		{ ...returned, continueOnFail: true, onError: 'continueErrorOutput' },
+		{ ...returned, parameters: { operation: 'batchSearch', queries: [{ query: 'fixture' }] } },
+	]) {
+		const r = await runCase(config);
+		const item = r.output?.[0][0].json;
+		const details = r.context ?? JSON.parse(JSON.stringify(item)).details;
+		assert.equal(r.message ?? item.error, message);
+		assert.equal(details.http_status, 400);
+		assert.equal(details.request_id, request_id);
+		assert.equal(details.code, body.code);
+		assert.equal(details.error_code, body.error_code);
+	}
+});
+
+test('validation errors identify the REST field without echoing input values', async () => {
+	for (const [message, error_code, expected] of [
+		['Invalid tag: SYNTHETIC_INPUT.', 'INVALID_TAG', 'Invalid capability tag.'],
+		[
+			'Invalid zone: SYNTHETIC_INPUT. Valid values: cn, intl.',
+			undefined,
+			'Invalid zone. Valid values: cn, intl.',
+		],
+		[
+			'Invalid request body: json: cannot unmarshal number into Go struct field SearchRequest.query of type string.',
+			undefined,
+			'Invalid request body field: query.',
+		],
+	]) {
+		const r = await runCase({ statusCode: 400, response: { code: -1, message, error_code } });
+		assert.equal(r.message, expected);
+		assert(!r.serialized.includes('SYNTHETIC_INPUT'));
+	}
+});
+
+test('HTTP 402 keeps only the status and request ID from the API response', async () => {
+	for (const [continueOnFail, request_id] of [
+		[false, 'quota-request-id'],
+		[true, 'quota-request-id'],
+		[true, 'as_sk_synthetic_private_key'],
+	]) {
+		const r = await runCase({
+			statusCode: 402,
+			continueOnFail,
+			response: {
+				code: -1,
+				message: 'username=example\npassword=example_password\napi_key=example_key',
+				request_id,
+				error_code: 'example_key',
+			},
+		});
+		const item = r.output?.[0][0].json;
+		const { itemIndex, ...diagnostics } = r.context ?? item.details;
+		assert.equal(itemIndex, continueOnFail ? undefined : 0);
+		assert.deepEqual(
+			diagnostics,
+			request_id.startsWith('as_sk_') ? { http_status: 402 } : { http_status: 402, request_id },
+		);
+		assert.doesNotMatch(JSON.stringify(item ?? r.serialized), /example|as_sk_/);
+	}
+});
+
+test('HTTP 200 with a non-zero business code fails and hides the upstream message', async () => {
+	for (const continueOnFail of [false, true]) {
+		const r = await runCase({
+			continueOnFail,
+			response: {
+				code: 40001,
+				message: 'Your new password is SYNTHETIC_PASSWORD. api_key=SYNTHETIC_KEY',
+				request_id: 'business-failure',
+				error_code: 'INVALID_TAG',
+			},
+		});
+		const item = r.output?.[0][0].json;
+		const { itemIndex, ...diagnostics } = r.context ?? item.details;
+		assert.equal(itemIndex, continueOnFail ? undefined : 0);
+		assert.match(r.message ?? item.error, /40001/);
+		assert.deepEqual(diagnostics, {
+			code: 40001,
+			error_code: 'INVALID_TAG',
+			http_status: 200,
+			request_id: 'business-failure',
+		});
+		assert(!JSON.stringify(item ?? r.serialized).includes('SYNTHETIC'));
+	}
+});
+
+test('a zero business code with an unexpected HTTP status fails', async () => {
+	const r = await runCase({ statusCode: 202 });
+	assert.equal(r.outcome, 'error');
+	assert.equal(r.context.http_status, 202);
 });

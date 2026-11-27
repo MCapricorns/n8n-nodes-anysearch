@@ -31,7 +31,7 @@ export function missingParameterMessage(message: unknown): string | undefined {
 	const fields = match[2].split(', ');
 	const known = requiredByTag.get(match[1]);
 	if (!fields.every((field) => known?.includes(field))) return undefined;
-	return `Missing required parameters for ${match[1]}: ${fields.join(', ')}.`;
+	return message;
 }
 
 const statements = new Set(['income', 'balance', 'cashflow', 'indicator', 'holder']);

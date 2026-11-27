@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Default new AnySearch nodes to version 2, which submits REST parameters as supplied and uses the service's validation and defaults.
+- Keep the validation and parameter defaults from 1.1.4 for workflows saved with node version 1.
+- Preserve HTTP status, request ID, business code and optional error code in n8n error output. Limit HTTP 402 diagnostics to status and request ID.
+- Verify outgoing requests and error diagnostics in real n8n. Run isolated fault tests without an AnySearch account.
+
 ## 1.1.4 (2026-11-27)
 
 - Enforce the earnings calendar period, the unused fundamental ticker and esports parameter formats and choices in Search and Batch Search.
