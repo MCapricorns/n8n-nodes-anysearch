@@ -66,6 +66,9 @@ test('only matching, non-empty output joined to the actual request can pass cata
 		nonemptyOnly: 0,
 		unverified: [],
 		failures: [],
+		checks: [
+			{ index: 0, tag: job.tag, request_id: 'request-0', status: 'verified', reason: undefined },
+		],
 	});
 	assert.throws(
 		() => checkMatrix(records, [{ ...requests[0], resultCount: 0 }], domains),
@@ -232,6 +235,10 @@ test('the document path distinguishes a Reddit comment, LinkedIn job and legal c
 		() => checkSearchResults(comment, [{ url: 'https://' + socialLinks.reddit_comment }, post]),
 		/reddit_comment/,
 	);
+	assert.deepEqual(assessSearchResults(comment, [post]), {
+		status: 'unverified',
+		reason: 'reddit_comment returned a parent thread without a comment permalink',
+	});
 	assert.throws(
 		() => checkSearchResults(job, [{ url: 'https://linkedin.com/posts/python-jobs' }]),
 		/linkedin_jobs/,

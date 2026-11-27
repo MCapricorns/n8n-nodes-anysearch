@@ -242,6 +242,7 @@ export function catalogRequestReport(records, requests, domains) {
 	const bodies = [];
 	const failures = [];
 	const unverified = [];
+	const checks = [];
 	let semanticChecks = 0;
 	let nonemptyOnly = 0;
 	for (const [index, { input, output, expectedParams }] of records.entries()) {
@@ -303,6 +304,7 @@ export function catalogRequestReport(records, requests, domains) {
 				request_id: id,
 				reason: result.reason,
 			};
+			checks.push({ ...evidence, status: result.status });
 			switch (result.status) {
 				case 'verified':
 					semanticChecks++;
@@ -330,6 +332,7 @@ export function catalogRequestReport(records, requests, domains) {
 		nonemptyOnly,
 		unverified,
 		failures,
+		checks,
 	};
 }
 

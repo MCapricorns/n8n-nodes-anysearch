@@ -114,7 +114,14 @@ export function capabilityParameters(
 		: fieldNames;
 	for (const field of validationOrder) {
 		const value = params[field];
-		if (value === undefined || (value === '' && allowsEmpty(tag, field, params.type))) continue;
+		if (value === undefined) continue;
+		if (value === '' && allowsEmpty(tag, field, params.type)) {
+			const submitted = input?.[field];
+			if (submitted !== undefined && typeof submitted !== 'string') {
+				throw new NodeOperationError(node, `For ${tag}, ${field} must be a string.`);
+			}
+			continue;
+		}
 		const configuredRule = capability?.fields?.[field];
 		const rule =
 			configuredRule?.applies && !configuredRule.applies(params) ? undefined : configuredRule;

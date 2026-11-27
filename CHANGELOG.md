@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.10 (2026-11-27)
+
+- Reject IANA-reserved IPv6 literals in Extract, including deprecated site-local and IPv4-compatible addresses. Keep public IPv4, IPv6, and the global translation prefix available.
+- Reject a non-boolean Simplify value and wrong-type fundamental ticker fields before sending requests. Continue to supply the documented empty ticker placeholders for valid workflows.
+- Preserve HTTP status, business code, and request ID when a successful REST envelope contains malformed data. Share JSON parsing and response validation error handling across operations.
+- Add focused REST workflow and replay modes to the n8n runner. Record request IDs, outgoing bodies, and short response summaries while retaining only status and request ID for HTTP 402.
+- Mark comment-like Reddit records with only a parent thread URL as insufficient evidence of a comment permalink in acceptance reports.
+- Known upstream behavior observed during review includes intermittent Search HTTP 503, HTTP 502 for unknown discovery domains, and HTTP 422 for some public Extract targets. Some HTTP 200 responses returned a different DOI, source, or legal collection from the requested filter.
+
 ## 1.1.9 (2026-11-27)
 
 - Reject additional non-public IPv4 and IPv6 addresses in Extract before sending a request. Keep globally reachable exceptions available.

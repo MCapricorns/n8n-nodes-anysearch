@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { createModelServer } from '../test/e2e/model-server.mjs';
 import { runFaultWorkflows } from '../test/e2e/fault-workflows.mjs';
 import {
@@ -27,7 +28,13 @@ const nodeExecutable = process.env.N8N_E2E_NODE || process.execPath;
 const capabilityOnly = process.argv.includes('--capabilities');
 const singleCatalog = process.argv.includes('--single-catalog');
 const faultsOnly = process.argv.includes('--faults');
+const replayOnly = process.argv.includes('--replay-only');
+const smokeOnly = process.argv.includes('--smoke-only');
 assert(!(faultsOnly && (capabilityOnly || singleCatalog)), '--faults runs independently');
+assert(
+	!smokeOnly || (capabilityOnly && !singleCatalog && !faultsOnly),
+	'--smoke-only requires --capabilities and runs separately from catalog and faults',
+);
 const apiKey = faultsOnly ? '' : (process.env.ANYSEARCH_API_KEY || '').trim();
 assert(
 	apiKey || capabilityOnly || faultsOnly,
@@ -47,8 +54,8 @@ const env = {
 	N8N_TEMPLATES_ENABLED: 'false',
 	E2E_TESTS: 'true',
 	N8N_LOG_LEVEL: 'info',
-	N8N_PORT: '5789',
-	N8N_RUNNERS_BROKER_PORT: '5790',
+	N8N_PORT: process.env.N8N_PORT || '5789',
+	N8N_RUNNERS_BROKER_PORT: process.env.N8N_RUNNERS_BROKER_PORT || '5790',
 };
 delete env.ANYSEARCH_API_KEY;
 delete env.ANYSEARCH_REVIEW_KEY;
@@ -118,9 +125,12 @@ function executionFrom(stdout) {
 }
 const modelServer = capabilityOnly || faultsOnly ? undefined : await createModelServer();
 const catalogRecords = [];
-const catalogFile =
-	process.env.ANYSEARCH_E2E_CASES ||
-	(singleCatalog ? path.join(root, 'test/e2e/search-cases.json') : undefined);
+const bundledCatalog = path.join(root, 'test/e2e/search-cases.json');
+const catalogFile = process.env.ANYSEARCH_E2E_CASES || (singleCatalog ? bundledCatalog : undefined);
+assert(
+	!replayOnly || (capabilityOnly && singleCatalog && process.env.ANYSEARCH_E2E_CASES),
+	'--replay-only requires --capabilities --single-catalog and ANYSEARCH_E2E_CASES',
+);
 const tests = [];
 const nodes = [
 	{
@@ -152,7 +162,11 @@ function add(name, parameters, credential, check) {
 			check(items);
 			for (const { json } of items) {
 				if (parameters.resource === 'extract' && !json.error)
-					assert.equal(json.url, parameters.url);
+					assert.equal(
+						json.url,
+						parameters.url,
+						'Extract returned a URL different from the submitted URL',
+					);
 				if (Array.isArray(json.results) && json.metadata?.total_results !== undefined)
 					assert.equal(
 						json.metadata.total_results,
@@ -163,6 +177,120 @@ function add(name, parameters, credential, check) {
 		},
 	});
 }
+const smokeRequests = [];
+
+function addSmokeTests(credential) {
+	function addSmoke(name, path, body, parameters, check) {
+		smokeRequests.push({ name, path, body });
+		add(name, parameters, credential, (items) => {
+			assert.equal(items.length, 1);
+			const item = items[0].json;
+			if (item.details?.http_status === 402) {
+				assert(item.details.request_id, 'Expected a request ID on HTTP 402');
+				assert.fail(`HTTP 402 (${item.details.request_id})`);
+			}
+			assert(!item.error, item.error);
+			assert(item.request_id);
+			check(item);
+		});
+	}
+
+	function addSearch(name, body, entity) {
+		const { query, max_results, params, ...options } = body;
+		addSmoke(
+			name,
+			'/v1/search',
+			body,
+			{
+				resource: 'search',
+				operation: 'search',
+				query,
+				options: {
+					...options,
+					maxResults: max_results,
+					params: params && JSON.stringify(params),
+					simplify: false,
+				},
+			},
+			(item) => {
+				assert(Array.isArray(item.results), 'Expected a results array');
+				assert(item.results.length > 0, 'Expected at least one result for the fixture');
+				assert(item.results.length <= (max_results ?? 10), 'Results exceed requested limit');
+				assert(
+					item.results.some(({ title, url, snippet }) =>
+						entity.test([title, url, snippet].join(' ')),
+					),
+					'No result identifies the requested entity',
+				);
+			},
+		);
+	}
+
+	addSearch(
+		'Search all fields, max 1',
+		{
+			query: 'React useState API official reference',
+			max_results: 1,
+			tag: 'code.doc',
+			zone: 'intl',
+			language: 'en',
+			format: 'json',
+			params: { library: 'react' },
+		},
+		/react|usestate/i,
+	);
+	addSearch(
+		'Search all fields, max 10',
+		{
+			query: 'Vue 3 响应式 API ref 官方文档',
+			max_results: 10,
+			tag: 'code.doc',
+			zone: 'cn',
+			language: 'zh-CN',
+			format: 'markdown',
+			params: { library: 'vue' },
+		},
+		/\bvue(?:js)?\b/i,
+	);
+	addSearch('Search defaults', { query: 'n8n workflow documentation' }, /n8n/i);
+	for (const [name, url, content] of [
+		['Extract HTTPS', 'https://example.com', /example domain/i],
+		['Extract HTTP', 'http://example.com', /example domain/i],
+		[
+			'Extract public redirect',
+			'https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.com%2F',
+			/example domain/i,
+		],
+		[
+			'Extract public JSON',
+			'https://raw.githubusercontent.com/MCapricorns/n8n-nodes-anysearch/1.1.9/package.json',
+			/n8n-nodes-anysearch/i,
+		],
+		[
+			'Extract public plain text',
+			'https://raw.githubusercontent.com/MCapricorns/n8n-nodes-anysearch/1.1.9/README.md',
+			/n8n-nodes-anysearch/i,
+		],
+		['Extract public IPv4', 'https://1.1.1.1/help', /cloudflare|1\.1\.1\.1/i],
+		['Extract public IPv6', 'https://[2606:4700:4700::1111]/help', /cloudflare|1\.1\.1\.1/i],
+	]) {
+		addSmoke(
+			name,
+			'/v1/extract',
+			{ url },
+			{ resource: 'extract', operation: 'extract', url },
+			(item) => {
+				assert.match(item.url, /^https?:\/\//i, 'Expected returned URL');
+				assert.match(
+					[item.title, item.content].join(' '),
+					content,
+					'Content did not identify the target',
+				);
+			},
+		);
+	}
+}
+
 function addStandardTests() {
 	function searchCheck(items) {
 		assert.equal(items.length, 1);
@@ -491,7 +619,7 @@ async function addCatalogTests(credential) {
 		const cases = JSON.parse(await fs.readFile(catalogFile, 'utf8'));
 		const dateAfter = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 		for (const entry of cases) {
-			if (entry.tag === 'travel.flight') {
+			if (path.resolve(catalogFile) === bundledCatalog && entry.tag === 'travel.flight') {
 				entry.params.date = dateAfter(30);
 				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
 			}
@@ -536,9 +664,13 @@ async function addCatalogTests(credential) {
 }
 
 if (!faultsOnly) {
-	if (!capabilityOnly) addStandardTests();
-	if (!capabilityOnly || catalogFile) await addCatalogTests(apiKey ? 'valid' : null);
-	addCapabilityChecks(add, apiKey ? 'valid' : null);
+	const credential = apiKey ? 'valid' : null;
+	if (smokeOnly) addSmokeTests(credential);
+	else {
+		if (!capabilityOnly) addStandardTests();
+		if (!capabilityOnly || catalogFile) await addCatalogTests(credential);
+		if (!replayOnly) addCapabilityChecks(add, credential);
+	}
 }
 async function importCredentials() {
 	const coreRoot = path.dirname(engineRequire.resolve('n8n-core/package.json'));
@@ -628,14 +760,21 @@ async function runLiveWorkflows() {
 			ANYSEARCH_E2E_TRACE: traceFile,
 			ANYSEARCH_E2E_TRACE_PIPE: '1',
 		},
-		300000 + (singleCatalog ? catalogRecords.length * 60000 : 0),
+		300000 + Math.ceil(catalogRecords.length / (singleCatalog ? 1 : 5)) * 60000,
 	);
 	let data;
 	try {
 		data = executionFrom(execution.stdout);
 	} catch (error) {
+		const startupErrors = execution.stdout
+			.split('\n')
+			.filter((line) => /EADDRINUSE|already in use|Error loading (?:node|credential)/i.test(line));
 		throw new Error(
-			error.message + ' (exit ' + execution.code + '): ' + redact(execution.stderr).slice(-2000),
+			error.message +
+				' (exit ' +
+				execution.code +
+				'): ' +
+				redact([...startupErrors, execution.stderr].join('\n')).slice(-2000),
 		);
 	}
 	if (data.data.resultData.error) {
@@ -685,6 +824,9 @@ async function runLiveWorkflows() {
 				request_id: item.json.request_id ?? item.json.details?.request_id,
 				query_index: item.json.query_index ?? item.json.details?.query_index,
 				resultCount: item.json.results?.length,
+				...(smokeOnly && !item.json.error && item.json.content !== undefined
+					? { url: item.json.url, title: item.json.title }
+					: {}),
 				contentLength: item.json.content?.length,
 				error: item.json.error,
 				http_status: item.json.details?.http_status,
@@ -726,6 +868,18 @@ async function runLiveWorkflows() {
 		wireRequests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
+	if (capabilityOnly) {
+		verify('REST Authorization', () => {
+			assert(
+				wireRequests.every(
+					(request) =>
+						request.authorizationPresent === Boolean(apiKey) &&
+						request.bearerPresent === Boolean(apiKey),
+				),
+				'Unexpected Authorization header presence or scheme',
+			);
+		});
+	}
 	verify('REST error diagnostics', () => {
 		for (const { results = [] } of observations) {
 			for (const { request_id, http_status, code, error_code } of results) {
@@ -749,13 +903,37 @@ async function runLiveWorkflows() {
 		}
 	});
 
-	verify('Capability HTTP requests', () => checkCapabilityRequests(wireRequests, observations));
-	if (catalogFile)
+	if (smokeOnly) {
+		for (const { name, path, body } of smokeRequests) {
+			verify(name + ' wire request', () => {
+				const id = observations.find((test) => test.name === name)?.results?.[0]?.request_id;
+				const captured = wireRequests.filter(
+					(request) =>
+						request.path === path &&
+						(body.query ? request.body?.query === body.query : request.body?.url === body.url),
+				);
+				assert.equal(captured.length, 1, 'Expected one POST on the wire');
+				const [request] = captured;
+				assert.equal(request.method, 'POST');
+				assert(isDeepStrictEqual(request.body, body), 'Outgoing body differs');
+				assert.equal(
+					request.authorizationPresent,
+					Boolean(apiKey),
+					'Unexpected Authorization header presence',
+				);
+				assert.equal(request.bearerPresent, Boolean(apiKey), 'Unexpected Bearer scheme');
+				assert.equal(request.request_id, id, 'Request ID differs');
+			});
+		}
+	}
+	if (!replayOnly && !smokeOnly)
+		verify('Capability HTTP requests', () => checkCapabilityRequests(wireRequests, observations));
+	if (catalogFile && !smokeOnly)
 		verify('Catalog requests and returned results', () => {
 			const domains = runData.Subdomains.at(-1).data.main[0].map((item) => item.json);
 			summary.catalogCoverage = catalogRequestReport(catalogRecords, wireRequests, domains);
 			checkCatalogRequests(summary.catalogCoverage);
-			if (path.resolve(catalogFile) === path.join(root, 'test/e2e/search-cases.json')) {
+			if (path.resolve(catalogFile) === bundledCatalog) {
 				const listed = runData.Domains.at(-1).data.main[0].map((item) => item.json.domain);
 				assert.deepEqual(domains.map((item) => item.domain).sort(), listed.sort());
 				assert.deepEqual(
@@ -788,6 +966,7 @@ async function runLiveWorkflows() {
 			true,
 			'Missing Bearer header on authenticated search',
 		);
+		assert(authenticated.bearerPresent, 'Authenticated Search did not send Bearer authorization');
 		assert.equal(authenticated.status, 200);
 		for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
 			const requests = wireRequests.filter((request) => request.body?.query === query);

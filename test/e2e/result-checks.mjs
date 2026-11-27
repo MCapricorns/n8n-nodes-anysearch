@@ -866,6 +866,16 @@ function checkSelectedResult(tag, params, result) {
 	if (tag === 'social_media.social_media' && params.type) {
 		if (!Object.hasOwn(socialSources, params.type)) return undefined;
 		const [hosts, path] = socialSources[params.type];
+		if (
+			params.type === 'reddit_comment' &&
+			fromHost(url, hosts) &&
+			socialSources.reddit_post[1].test(url.pathname) &&
+			/^Re:\s/i.test(result.title ?? '')
+		) {
+			throw new MissingEvidence(
+				'reddit_comment returned a parent thread without a comment permalink',
+			);
+		}
 		assert(
 			fromHost(url, hosts) && url.pathname !== '/' && (!path || path.test(url.pathname)),
 			'Expected a ' + params.type + ' result link',

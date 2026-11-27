@@ -290,39 +290,41 @@ function validateEnvelope(
 function readDataObject(node: INode, envelope: AnySearchEnvelope, operation: string): IDataObject {
 	const data = objectValue(envelope.data);
 	if (!data)
-		throw apiError(
+		throw invalidData(
 			node,
+			envelope,
 			`AnySearch ${operation} response is missing the data object.`,
-			envelope.request_id,
 		);
 	return data;
 }
 
+function invalidData(node: INode, envelope: AnySearchEnvelope, message: string) {
+	return apiError(node, message, envelope.request_id, 200, { code: 0 });
+}
+
 function readArrayField(
 	node: INode,
+	envelope: AnySearchEnvelope,
 	data: IDataObject,
 	field: string,
 	operation: string,
-	requestId?: string,
 ): IDataObject[] {
 	const value = data[field];
 	if (!Array.isArray(value) || value.some((entry) => !objectValue(entry))) {
-		throw apiError(
+		throw invalidData(
 			node,
+			envelope,
 			`AnySearch ${operation} response contains missing or invalid data.${field}.`,
-			requestId,
 		);
 	}
 	return value as IDataObject[];
 }
 
-function readTagParameters(node: INode, value: IDataObject[string]): IDataObject[string] {
-	if (value === '') return undefined;
-	if (typeof value !== 'string') return value;
+function parseJsonParameter(node: INode, value: string, name: string): IDataObject[string] {
 	try {
 		return JSON.parse(value);
 	} catch {
-		throw new NodeOperationError(node, 'Tag Parameters must be valid JSON');
+		throw new NodeOperationError(node, `${name} must be valid JSON`);
 	}
 }
 
@@ -401,7 +403,7 @@ async function search(
 		itemIndex,
 	);
 	const data = readDataObject(this.getNode(), envelope, 'search');
-	const results = readArrayField(this.getNode(), data, 'results', 'search', envelope.request_id);
+	const results = readArrayField(this.getNode(), envelope, data, 'results', 'search');
 	if (
 		results.some(
 			(result) =>
@@ -412,10 +414,10 @@ async function search(
 				),
 		)
 	) {
-		throw apiError(
+		throw invalidData(
 			this.getNode(),
+			envelope,
 			'AnySearch search response contains invalid result fields.',
-			envelope.request_id,
 		);
 	}
 	const metadata = objectValue(data.metadata);
@@ -431,10 +433,10 @@ async function search(
 					!Number.isFinite(metadata.search_time_ms) ||
 					metadata.search_time_ms < 0)))
 	) {
-		throw apiError(
+		throw invalidData(
 			this.getNode(),
+			envelope,
 			'AnySearch search response contains invalid metadata.',
-			envelope.request_id,
 		);
 	}
 	return {
@@ -456,11 +458,19 @@ async function searchOperation(
 	const node = this.getNode();
 	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
 	const { maxResults, simplify, params, ...fields } = options;
+	if (simplify !== undefined && typeof simplify !== 'boolean') {
+		throw new NodeOperationError(node, 'Simplify must be a boolean');
+	}
+	let tagParameters = params;
+	if (params === '') tagParameters = undefined;
+	else if (typeof params === 'string') {
+		tagParameters = parseJsonParameter(node, params, 'Tag Parameters');
+	}
 	const body = searchBody(node, {
 		...fields,
 		query: this.getNodeParameter('query', itemIndex, ''),
 		...(maxResults === undefined ? {} : { max_results: maxResults }),
-		params: readTagParameters(node, params),
+		params: tagParameters,
 	});
 	const data = await search.call(this, body, itemIndex);
 	const results = data.results as IDataObject[];
@@ -476,14 +486,11 @@ async function batchSearchOperation(
 	itemIndex: number,
 ): Promise<INodeExecutionData[]> {
 	const node = this.getNode();
-	let queries: unknown = this.getNodeParameter('queries', itemIndex);
-	if (typeof queries === 'string' && queries.trim() !== '') {
-		try {
-			queries = JSON.parse(queries);
-		} catch {
-			throw new NodeOperationError(node, 'Queries must be valid JSON');
-		}
-	}
+	const value = this.getNodeParameter('queries', itemIndex, '');
+	const queries =
+		typeof value === 'string' && value.trim() !== ''
+			? parseJsonParameter(node, value, 'Queries')
+			: value;
 	if (!Array.isArray(queries) || queries.length < 1 || queries.length > 5) {
 		throw new NodeOperationError(node, 'Queries must contain between 1 and 5 search objects');
 	}
@@ -507,8 +514,6 @@ async function batchSearchOperation(
 }
 
 function isNonPublicIPv6(host: string): boolean {
-	if (host === '[::]' || host === '[::1]') return true;
-
 	// URL normalizes the literal, but may leave a run of zero hextets compressed.
 	const [prefix, suffix] = host.slice(1, -1).split('::');
 	const words = (text: string) =>
@@ -518,11 +523,23 @@ function isNonPublicIPv6(host: string): boolean {
 			.map((word) => parseInt(word, 16));
 	const leading = words(prefix);
 	const trailing = suffix === undefined ? [] : words(suffix);
-	const [first, second, third, fourth] = [
+	const [first, second, third, fourth, fifth, sixth] = [
 		...leading,
 		...Array<number>(8 - leading.length - trailing.length).fill(0),
 		...trailing,
 	];
+
+	// IANA global unicast is 2000::/3. Keep the globally reachable NAT64 prefix.
+	if ((first & 0xe000) !== 0x2000) {
+		return !(
+			first === 0x64 &&
+			second === 0xff9b &&
+			third === 0 &&
+			fourth === 0 &&
+			fifth === 0 &&
+			sixth === 0
+		);
+	}
 
 	// The IANA protocol assignment has more specific entries with different reachability.
 	if (first === 0x2001 && second < 0x200) {
@@ -534,16 +551,7 @@ function isNonPublicIPv6(host: string): boolean {
 			/^\[2001:1::[123]\]$/.test(host)
 		);
 	}
-	return (
-		(first === 0x64 && second === 0xff9b && third === 1) ||
-		(first === 0x100 && second === 0 && third === 0 && fourth <= 1) ||
-		(first === 0x2001 && second === 0xdb8) ||
-		(first === 0x3fff && second < 0x1000) ||
-		first === 0x5f00 ||
-		(first >= 0xfc00 && first <= 0xfdff) ||
-		(first >= 0xfe80 && first <= 0xfebf) ||
-		first >= 0xff00
-	);
+	return (first === 0x2001 && second === 0xdb8) || (first === 0x3fff && second < 0x1000);
 }
 
 function isNonPublicHost(hostname: string): boolean {
@@ -619,10 +627,10 @@ async function extractOperation(
 		typeof data.title !== 'string' ||
 		typeof data.content !== 'string'
 	) {
-		throw apiError(
+		throw invalidData(
 			this.getNode(),
+			envelope,
 			'AnySearch extract response must contain string url, title, and content fields.',
-			envelope.request_id,
 		);
 	}
 	return [
@@ -678,13 +686,7 @@ async function fetchDomains(
 		itemIndex,
 	);
 	const data = readDataObject(this.getNode(), envelope, 'capability');
-	const domains = readArrayField(
-		this.getNode(),
-		data,
-		'domains',
-		'capability',
-		envelope.request_id,
-	);
+	const domains = readArrayField(this.getNode(), envelope, data, 'domains', 'capability');
 	if (
 		domains.some(
 			(domain) =>
@@ -695,10 +697,10 @@ async function fetchDomains(
 						domain.sub_domains.some((entry) => !validCapability(entry)))),
 		)
 	) {
-		throw apiError(
+		throw invalidData(
 			this.getNode(),
+			envelope,
 			'AnySearch capability response contains invalid domain definitions.',
-			envelope.request_id,
 		);
 	}
 	return { domains, requestId: envelope.request_id };

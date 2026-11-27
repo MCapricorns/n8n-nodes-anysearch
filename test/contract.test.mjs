@@ -252,6 +252,13 @@ test('only the single Search editor decodes JSON text for tag parameters', async
 	}
 });
 
+test('the Search editor rejects a non-boolean Simplify value before sending HTTP', async () => {
+	const run = await runCase({ parameters: { options: { simplify: 'false' } } });
+	assert.equal(run.outcome, 'error');
+	assert.match(run.message, /simplify must be a boolean/i);
+	assert.equal(run.requests.length, 0);
+});
+
 test('both search operations omit params when there are no tag parameters to send', async () => {
 	const query = 'general search';
 	for (const fields of [
@@ -395,7 +402,12 @@ test('search rejects malformed documented metadata fields', async () => {
 		const r = await runCase({ response: { ...success, data: { ...success.data, metadata } } });
 		assert.equal(r.outcome, 'error');
 		assert.match(r.message, /invalid metadata/);
-		assert.equal(r.context.request_id, success.request_id);
+		assert.deepEqual(r.context, {
+			request_id: success.request_id,
+			http_status: 200,
+			code: 0,
+			itemIndex: 0,
+		});
 	}
 });
 
@@ -422,6 +434,12 @@ test('extract trims valid URLs and rejects malformed or unsupported URLs before 
 		'https://198.51.100.10/',
 		'https://203.0.113.10/',
 		'https://[::ffff:192.0.2.10]/',
+		'https://[::2]/',
+		'https://[64:ff9b:0:1::1]/',
+		'https://[64:ff9b:1::1]/',
+		'https://[4000::1]/',
+		'https://[fe80::1]/',
+		'https://[fec0::1]/',
 		'https://[2001:db8::1]/',
 		'https://[3fff::1]/',
 		42,
@@ -431,7 +449,14 @@ test('extract trims valid URLs and rejects malformed or unsupported URLs before 
 		assert.match(rejected.message, /URL/i);
 		assert.equal(rejected.requests.length, 0);
 	}
-	for (const url of ['https://8.8.8.8/', 'https://192.0.0.9/', 'https://[2001:1::1]/']) {
+	for (const url of [
+		'https://8.8.8.8/',
+		'https://192.0.0.9/',
+		'https://[2001:1::1]/',
+		'https://[2606:4700:4700::1111]/',
+		'https://[::ffff:8.8.8.8]/',
+		'https://[64:ff9b::808:808]/',
+	]) {
 		const allowed = await runCase({
 			parameters: { ...parameters, url },
 			response: { code: 0, data: { url, title: 'Public fixture', content: 'Body' } },
@@ -927,6 +952,8 @@ test('both search operations apply shared capability validation and compatibilit
 		['academic.citation', { id: '06101801781-06180334099', op: 'citation' }, {}],
 		['code.doc', {}, /\blibrary\b/],
 		['finance.fundamental', { type: 'balance', cn_code: 600519 }, /\bcn_code\b/],
+		['finance.fundamental', { type: 'overview', cn_code: [] }, /\bcn_code\b/],
+		['finance.fundamental', { type: 'balance', cn_code: '600519.SH', symbol: {} }, /\bsymbol\b/],
 		['academic.citation', { id: 33817056, id_type: 'pmid' }, /\bid\b/],
 		['code.doc', { library: null }, /\blibrary\b/],
 		['code.doc', { library: 'react', undocumented: 'value' }, /unsupported parameters/i],

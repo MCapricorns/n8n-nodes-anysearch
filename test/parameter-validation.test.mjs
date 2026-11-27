@@ -48,10 +48,9 @@ test('the compiled validator accepts all positive fixtures, covers the catalog, 
 	assert.deepEqual(unexpected, []);
 });
 
-test('catalog fields reject objects and arrays unless the node replaces that field with a documented value', () => {
+test('catalog fields reject objects and arrays', () => {
 	const failures = new Set();
 	for (const { tag, query, params } of cases) {
-		const overrides = expectedOverrides(tag, params);
 		for (const field of Object.keys(params ?? {})) {
 			for (const [kind, value] of [
 				['object', Object.freeze({ invalid: true })],
@@ -59,14 +58,7 @@ test('catalog fields reject objects and arrays unless the node replaces that fie
 			]) {
 				const input = Object.freeze({ ...params, [field]: value });
 				try {
-					if (Object.hasOwn(overrides, field)) {
-						assert.deepEqual(capabilityParameters(node, tag, input, query), {
-							...params,
-							...overrides,
-						});
-					} else {
-						assertFieldError(tag, field, input, query);
-					}
+					assertFieldError(tag, field, input, query);
 					assert.equal(input[field], value);
 				} catch (error) {
 					failures.add(`${tag}.${field} with an ${kind}\n${error.message}`);
@@ -170,7 +162,7 @@ test('documented defaults add or replace the fields needed in outbound requests'
 		[
 			'finance.fundamental',
 			'贵州茅台 利润表',
-			{ type: 'income', cn_code: '600519.SH', symbol: ['unused'] },
+			{ type: 'income', cn_code: '600519.SH', symbol: 'unused' },
 			{ type: 'income', cn_code: '600519.SH', symbol: '' },
 		],
 	]) {
