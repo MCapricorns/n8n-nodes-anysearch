@@ -28,3 +28,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Compare parameter definitions and test cases with the live catalog
+        run: npm run test:catalog

@@ -1,0 +1,775 @@
+{
+  "reviewed": "2026-11-27",
+  "source": "https://api.anysearch.com/v1/sub-domains",
+  "topology_version": 27,
+  "tags": {
+    "academic.citation": {
+      "category": {
+        "required": false,
+        "description": "Subject category, comma-separated multi-value. Valid values (22): `Computer Science`, `Medicine`, `Biology`, `Chemistry`, `Physics`, `Mathematics`, `Materials Science`, `Engineering`, `Environmental Science`, `Geology`, `Geography`, `Sociology`, `Psychology`, `Economics`, `Business`, `Political Science`, `Linguistics`, `Philosophy`, `History`, `Art`, `Education`, `Law`."
+      },
+      "doi": {
+        "required": false,
+        "description": "DOI identifier, e.g. 10.1038/s41586-021-03819-2"
+      },
+      "filter": {
+        "required": false,
+        "description": "RAMOSE filter expression. Format: `field:value`, e.g., `creation:2020-*-*` (citations after 2020)."
+      },
+      "id": {
+        "required": true,
+        "description": "Persistent identifier value extracted from user input. Do NOT include type prefixes like \"doi:\" or \"pmid:\". Formats: DOI (e.g. 10.1038/s41586-021-03819-2), PMID (pure digits, e.g. 33817056), ISSN (e.g. 0138-9130), ISBN (e.g. 9781402096327), ORCID (e.g. 0000-0003-0530-4305), OMID (e.g. br/06101801781), OCI (digits-digits, e.g. 06101801781-06180334099, only for op=citation)."
+      },
+      "id_type": {
+        "required": false,
+        "description": "Identifier type. Values: `doi`, `pmid`, `issn`, `isbn`, `orcid`, `omid`. When empty, auto-detected from query format (e.g., `10.xxx/yyy` → doi, pure digits → pmid)."
+      },
+      "min_citations": {
+        "required": false,
+        "description": "Minimum citation count, non-negative integer string, e.g., `100`. Used for academic quality filtering"
+      },
+      "op": {
+        "required": false,
+        "description": "Operation type. Values: `metadata` (metadata query, default), `citations` (cited-by list), `references` (reference list), `citation-count` (citation count), `reference-count` (reference count), `author` (works by author), `editor` (works by editor), `venue-citation-count` (journal citation count), `citation` (single citation relationship, requires OCI)"
+      },
+      "open_access": {
+        "required": false,
+        "description": "Whether open access. Valid values: true, false"
+      },
+      "sort": {
+        "required": false,
+        "description": "RAMOSE sort expression. Format: `field:order`, e.g., `creation:desc` (descending by creation time)."
+      },
+      "type": {
+        "required": false,
+        "description": "1. Document type filter. Values: `journal-article` (journal paper), `book` (book), `proceedings-article` (conference paper), `dataset` (dataset), `book-chapter` (book chapter), `posted-content` (preprint), `report` (report), etc. Maps to Crossref `filter=type:{value}`. 2. Publication type, comma-separated multi-value (no spaces). Valid values (13): `JournalArticle`, `Conference`, `Review`, `CaseReport`, `ClinicalTrial`, `Dataset`, `Editorial`, `LettersAndComments`, `MetaAnalysis`, `News`, `Study`, `Book`, `BookSection`. Maps to `publicationTypes` parameter."
+      },
+      "venue": {
+        "required": false,
+        "description": "Journal/conference name, comma-separated multi-value. Must match S2 database exactly. Common values: `NeurIPS`, `ICML`, `ICLR`, `CVPR`, `Nature`, `Science`, `Cell`, `Lancet`."
+      },
+      "year_from": {
+        "required": false,
+        "description": "Publication date lower bound. Format `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`."
+      },
+      "year_to": {
+        "required": false,
+        "description": "Publication date upper bound. Format `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`."
+      }
+    },
+    "academic.dataset": {
+      "client_id": {
+        "required": false,
+        "description": "Data repository identifier. Examples: `cern.zenodo` (Zenodo), `figshare.ars` (Figshare), `bl.dryad` (Dryad)."
+      },
+      "resource_type": {
+        "required": false,
+        "description": "Resource type filter. Values: `Dataset` (datasets), `Software` (software), `Text` (text), `Image` (images), `Audiovisual` (audio/video), `Collection` (collections), `InteractiveResource` (interactive resources), etc."
+      },
+      "year_from": {
+        "required": false,
+        "description": "Publication year lower bound (inclusive), e.g., `2020`."
+      },
+      "year_to": {
+        "required": false,
+        "description": "Publication year upper bound (inclusive), e.g., `2024`."
+      }
+    },
+    "academic.paper": {
+      "authors": {
+        "required": false,
+        "description": "Comma-separated author-name constraints. Return papers matching any supplied author."
+      },
+      "doi": {
+        "required": false,
+        "description": "Exact DOI lookup. Return the paper whose DOI matches the supplied value."
+      },
+      "language": {
+        "required": false,
+        "description": "ISO 639-1 language code."
+      },
+      "min_citations": {
+        "required": false,
+        "description": "Minimum citation count, non-negative integer string. Return papers at or above this value."
+      },
+      "open_access": {
+        "required": false,
+        "description": "Whether the work is open access. Values: true, false."
+      },
+      "publication_type": {
+        "required": false,
+        "description": "Publication-type constraint. Values: journal_article, preprint, book, book_chapter, thesis, dataset, report, review, other. Comma-separated multi-value."
+      },
+      "sort": {
+        "required": false,
+        "description": "Single ordering mode. Values: relevance, date_asc, date_desc, cited."
+      },
+      "venue": {
+        "required": false,
+        "description": "Journal or conference-name constraint, comma-separated. Values are resolved against the provider source index; use the full official name for best accuracy (e.g. Association for Computational Linguistics)."
+      },
+      "year": {
+        "required": false,
+        "description": "Publication year constraint. Format YYYY (single year), YYYY-YYYY (range), YYYY- (lower bound) or -YYYY (upper bound)."
+      }
+    },
+    "academic.person": {
+      "affiliations": {
+        "required": false,
+        "description": "Comma-separated institution constraints. Include an institution when the author name is ambiguous."
+      },
+      "name": {
+        "required": false,
+        "description": "Author name or recognized alias. Prefer the primary full-name profile when candidates are ambiguous."
+      },
+      "orcid": {
+        "required": false,
+        "description": "Bare checksum-valid ORCID used as an identity constraint, e.g. 0000-0002-1825-0097."
+      },
+      "research_areas": {
+        "required": false,
+        "description": "Comma-separated research-topic or discipline constraints. Apply them together with the identity conditions."
+      },
+      "schools": {
+        "required": false,
+        "description": "Comma-separated additional institution constraints, treated together with affiliations (no separate education-history data)."
+      }
+    },
+    "agriculture.fao": {
+      "date_start": {
+        "required": false,
+        "description": "2023 (year)"
+      },
+      "domain": {
+        "required": false,
+        "description": "production / trade / prices (data domain)"
+      },
+      "keyword": {
+        "required": false,
+        "description": "wheat production / rice trade (search keyword)"
+      },
+      "location": {
+        "required": false,
+        "description": "World / China (region name)"
+      },
+      "type": {
+        "required": false,
+        "description": "GlobalAgriculture (global agriculture data)"
+      }
+    },
+    "business.company": {
+      "keyword": {
+        "required": false,
+        "description": "Alibaba / Apple Inc. / AAPL (company name / credit code / LEI code / ticker)"
+      },
+      "type": {
+        "required": false,
+        "description": "ChineseEnterprise / GlobalLEI / USFilings (Chinese enterprise registry / global LEI entity / US SEC filings)"
+      }
+    },
+    "business.jobs": {
+      "keyword": {
+        "required": false,
+        "description": "software engineer / python (search keyword)"
+      },
+      "location": {
+        "required": false,
+        "description": "San Francisco / London / us (city/region/country)"
+      },
+      "salary_min": {
+        "required": false,
+        "description": "80000 / 120000 (minimum annual salary USD)"
+      },
+      "type": {
+        "required": false,
+        "description": "GeneralJobs / RemoteJobs / USFederalJobs (general job listings / remote positions / US federal jobs)"
+      }
+    },
+    "business.people": {
+      "keyword": {
+        "required": false,
+        "description": "software engineer / stripe.com (search keyword / company domain)"
+      },
+      "location": {
+        "required": false,
+        "description": "California / London (location filter)"
+      },
+      "seniority": {
+        "required": false,
+        "description": "executive / senior / entry (seniority filter)"
+      },
+      "title": {
+        "required": false,
+        "description": "CTO / Head of Engineering (title filter)"
+      },
+      "type": {
+        "required": false,
+        "description": "PeopleSearch / EmailLookup (contact search / domain email lookup)"
+      }
+    },
+    "business.trade": {
+      "date_start": {
+        "required": false,
+        "description": "2023 (year)"
+      },
+      "flow": {
+        "required": false,
+        "description": "export / import / both (trade direction)"
+      },
+      "hs_code": {
+        "required": false,
+        "description": "0902 / 8471 (HS code, must be 2/4/6/10 digits)"
+      },
+      "location": {
+        "required": false,
+        "description": "China / United States (partner country name)"
+      },
+      "type": {
+        "required": false,
+        "description": "GlobalBilateralTrade / USImportExport (global bilateral trade / US import & export)"
+      }
+    },
+    "code.doc": {
+      "library": {
+        "required": true,
+        "description": "Library or framework name to query docs for, e.g. react, express"
+      }
+    },
+    "code.snippet": {
+      "lang": {
+        "required": false,
+        "description": "Filter by programming language, e.g. TypeScript, Python"
+      },
+      "path": {
+        "required": false,
+        "description": "Filter by file path pattern, e.g. src/components/"
+      },
+      "repo": {
+        "required": false,
+        "description": "Filter by GitHub repository, e.g. facebook/react"
+      }
+    },
+    "energy.electricity": {
+      "date_end": {
+        "required": false,
+        "description": "2026-05-24 / 2025 (end date)"
+      },
+      "date_start": {
+        "required": false,
+        "description": "2026-05-23 / 2020 (start date)"
+      },
+      "location": {
+        "required": false,
+        "description": "France / New South Wales / California / China (region name)"
+      },
+      "metric": {
+        "required": false,
+        "description": "price / generation / emissions / demand / capacity (metric)"
+      },
+      "type": {
+        "required": false,
+        "description": "EUElectricity / AustralianElectricity / USEnergyData / GlobalElectricity (Europe / Australia / US / global electricity data)"
+      }
+    },
+    "energy.production": {
+      "date_start": {
+        "required": false,
+        "description": "2023-01 / 2020 (start date)"
+      },
+      "frequency": {
+        "required": false,
+        "description": "monthly / annual / quarterly (data frequency)"
+      },
+      "keyword": {
+        "required": false,
+        "description": "crude oil production / residential electricity price (search keyword)"
+      },
+      "location": {
+        "required": false,
+        "description": "California / Texas / United States (region name)"
+      },
+      "type": {
+        "required": false,
+        "description": "USEnergyData (US energy data)"
+      }
+    },
+    "environment.aqi": {
+      "location": {
+        "required": false,
+        "description": "20002 / 38.9,-77.0 / Beijing (zip code / coordinates / city name)"
+      },
+      "type": {
+        "required": false,
+        "description": "GlobalAirQuality (global air quality)"
+      }
+    },
+    "film.torrent": {},
+    "finance.calendar": {
+      "cn_code": {
+        "required": false,
+        "description": "A-share ticker, used when type=earnings. E.g., 600519.SH. When empty, returns market-wide schedule."
+      },
+      "period": {
+        "required": false,
+        "description": "Forward-looking time range. Default 7d; for type=earnings always pass 90d. Valid values same as quote."
+      },
+      "symbol": {
+        "required": false,
+        "description": "Stock ticker, used only when type=earnings. E.g., NVDA, AAPL. When empty, returns market-wide schedule."
+      },
+      "type": {
+        "required": true,
+        "description": "Calendar type: earnings, dividends, ipos, economic. For earnings, pass symbol or cn_code. dividends is market-wide international only — symbol and cn_code do not apply."
+      }
+    },
+    "finance.fundamental": {
+      "cn_code": {
+        "required": true,
+        "description": "A-share ticker — the identifier for type=income/balance/cashflow/indicator/holder. E.g., 600519.SH. For type=overview pass \"\"."
+      },
+      "period": {
+        "required": false,
+        "description": "Read only by type=overview (annual or quarter, default annual; these are different fiscal scopes — annual = latest full year, quarter = latest single quarter) and type=holder (time range, default 1y). Not used by the other four types."
+      },
+      "symbol": {
+        "required": true,
+        "description": "International market ticker — the identifier for type=overview. E.g., AAPL. When empty it is parsed from the query. For type=income/balance/cashflow/indicator/holder pass \"\"."
+      },
+      "type": {
+        "required": true,
+        "description": "Data type: overview, income, balance, cashflow, indicator, holder. indicator returns valuation and profitability ratios (ROE, PE, margins)."
+      }
+    },
+    "finance.macro": {
+      "period": {
+        "required": false,
+        "description": "Data time range. Default varies by type: gdp defaults to `2y`, cpi/lpr/money_supply/social_finance defaults to `1y`, shibor defaults to `30d`, US indicators truncated by maxResults. Valid values same as quote"
+      },
+      "type": {
+        "required": true,
+        "description": "Indicator type. Values: `gdp` (China & US GDP), `cpi` (China & US CPI), `fed_funds` (Federal Funds Rate), `treasury` (US Treasury yield curve 1M~30Y), `unemployment` (US unemployment rate), `nonfarm` (US nonfarm payrolls), `shibor` (China interbank rates), `lpr` (China LPR loan rates), `money_supply` (China M0/M1/M2), `social_finance` (China aggregate social financing)"
+      }
+    },
+    "finance.news": {
+      "cn_code": {
+        "required": false,
+        "description": "A-share ticker, used only when type=announcement. E.g., `600519.SH`. When empty, returns market-wide announcements"
+      },
+      "news_src": {
+        "required": false,
+        "description": "Chinese flash news source, used only when type=flash. Default `sina`. Values: `sina` (Sina Finance), `wallstreetcn` (Wallstreetcn), `10jqka` (Tonghuashun), `eastmoney` (East Money), `cls` (Cailian Press), `yicai` (Yicai), `yuncaijing` (Cloud Finance), `fenghuang` (Phoenix Finance), `jinrongjie` (Financial Street)"
+      },
+      "period": {
+        "required": false,
+        "description": "Query time range. type=flash/announcement defaults to `1d` (current day). Valid values same as quote"
+      },
+      "symbol": {
+        "required": false,
+        "description": "International market ticker, used only when type=stock. E.g., `AAPL`. When empty, parsed from query"
+      },
+      "type": {
+        "required": true,
+        "description": "News type. Values: `general` (global English financial news), `stock` (international single-stock news), `flash` (Chinese financial headlines), `announcement` (A-share listed company announcements)"
+      }
+    },
+    "finance.quote": {
+      "cn_code": {
+        "required": false,
+        "description": "Chinese market symbol. type=stock: e.g., `000001.SZ`, `600519.SH`; type=index: e.g., `399300.SZ`; type=etf: e.g., `510300.SH`; type=forex: e.g., `USDCNH.FXCM`"
+      },
+      "period": {
+        "required": false,
+        "description": "Historical data time range. Values: `7d`/`14d`/`30d`/`90d`/`180d`/`1y`/`5y` or custom `{N}d`. International markets default `7d`, Chinese markets default `30d`"
+      },
+      "symbol": {
+        "required": false,
+        "description": "International market symbol. type=stock: e.g., `AAPL`; type=forex: e.g., `EURUSD` (6-char pair); type=crypto: e.g., `BTCUSD` (required); type=commodity: e.g., `CLUSD` (empty returns market snapshot)"
+      },
+      "type": {
+        "required": true,
+        "description": "Asset type. Values: `stock` (global stocks + A-shares), `forex` (foreign exchange), `crypto` (cryptocurrency), `commodity` (commodities), `index` (Chinese indices), `etf` (Chinese ETFs)"
+      }
+    },
+    "finance.screen": {
+      "country": {
+        "required": false,
+        "description": "ISO 3166-1 alpha-2 country code, used only when type=stock. E.g., `US`, `JP`, `GB`, `DE`, `CN`, `HK`. Note: filters by company registration country, not exchange country"
+      },
+      "sector": {
+        "required": false,
+        "description": "GICS sector, used only when type=stock. Values: `Technology`, `Healthcare`, `Financial Services`, `Consumer Cyclical`, `Consumer Defensive`, `Industrials`, `Energy`, `Basic Materials`, `Communication Services`, `Real Estate`, `Utilities`"
+      },
+      "type": {
+        "required": true,
+        "description": "Screen type. Values: `stock` (screen stocks by sector/country), `etf` (search ETFs by name, query used as filter)"
+      }
+    },
+    "gaming.esports": {
+      "champion": {
+        "required": false,
+        "description": "Champion name substring filter. Matches any champion whose name contains the value, e.g., \"Lee\" matches Lee Sin, \"vi\" matches Vi and Sivir. If omitted, returns top count champions across all. Used with: mastery. E.g., \"Yasuo\""
+      },
+      "division": {
+        "required": false,
+        "description": "Subdivision within a tier. Only meaningful when tier is DIAMOND through IRON. Defaults to I if tier is set but division is omitted. Values: `I`, `II`, `III`, `IV`. Used with: leaderboard (requires tier). E.g., \"II\""
+      },
+      "game_name": {
+        "required": false,
+        "description": "Player's Game ID. Supports two formats: with tagLine embedded via \"#\" separator (e.g., \"Hide on Bush#KR1\", region is still required for API routing) or without tagLine (e.g., \"Tyler1\", default tagLine for that server is inferred automatically from region). Required for: player, ranked, mastery, live_game. E.g., \"Faker#KR1\""
+      },
+      "match_id": {
+        "required": false,
+        "description": "Fully-qualified match ID. Format: {REGION_PREFIX}_{numeric_id}. The region prefix determines the routing region automatically — no separate region param needed. Required for: match_detail. E.g., \"KR_7482819248\", \"NA1_4912837465\", \"EUW1_6723541890\""
+      },
+      "queue": {
+        "required": false,
+        "description": "Ranked queue type filter. Values: `RANKED_SOLO_5x5` (solo/duo ranked), `RANKED_FLEX_SR` (flex 5v5 ranked). If omitted for player/ranked, returns data across all queues. If omitted for leaderboard, defaults to RANKED_SOLO_5x5. Used with: player, ranked, leaderboard. E.g., \"RANKED_SOLO_5x5\""
+      },
+      "region": {
+        "required": false,
+        "description": "Server region for API routing. Values: `kr` (Korea), `na` (North America), `euw` (Europe West), `eune` (Europe Nordic & East), `jp` (Japan), `br` (Brazil), `la1` (Latin America North), `la2` (Latin America South), `oc` (Oceania), `tr` (Turkey), `ru` (Russia), `sg`/`sea` (Southeast Asia). Required for: player, ranked, mastery, live_game, leaderboard. Optional for champion_rotation (defaults to na if omitted). E.g., \"kr\""
+      },
+      "tier": {
+        "required": false,
+        "description": "Ranked tier filter. When omitted, auto-fetches Challenger, Grandmaster, Master by LP. When provided, division may also be specified. Values: `CHALLENGER`, `GRANDMASTER`, `MASTER`, `DIAMOND`, `EMERALD`, `PLATINUM`, `GOLD`, `SILVER`, `BRONZE`, `IRON`. Note: CHALLENGER/GRANDMASTER/MASTER have no divisions — omit division for these tiers. Used with: leaderboard. E.g., \"DIAMOND\""
+      },
+      "type": {
+        "required": true,
+        "description": "Query category. Determines which API chain is invoked and which other params are required. Values: `player` (match history of last N games + ranked summary), `ranked` (ranked stats only: tier, LP, W/L per queue, no match details), `mastery` (champion mastery list), `live_game` (whether a player is currently in a game; returns game state if so), `match_detail` (full participant breakdown for a single match by ID), `leaderboard` (top-ranked players for a region and queue), `champion` (champion static data: name, title — uses query field for fuzzy search), `item` (item static data: name, cost — uses query field for fuzzy search), `champion_rotation` (current free champion rotation for a platform). E.g., \"player\""
+      }
+    },
+    "gaming.store": {},
+    "general.general": {},
+    "health.drug": {
+      "type": {
+        "required": true,
+        "description": "Query type. Values: `name` (drug name search), `ndc` (NDC code lookup), `upc` (UPC barcode lookup)"
+      }
+    },
+    "health.stats": {},
+    "health.trial": {},
+    "ip.global": {
+      "applicant": {
+        "required": false,
+        "description": "Huawei / Huawei Technologies (applicant/organization name filter)"
+      },
+      "date_start": {
+        "required": false,
+        "description": "2020 / 20200101 (publication/application date start)"
+      },
+      "ipc": {
+        "required": false,
+        "description": "H01L / G06N (IPC/CPC classification filter)"
+      },
+      "keyword": {
+        "required": false,
+        "description": "solar cell / AI (search keyword)"
+      },
+      "type": {
+        "required": false,
+        "description": "GlobalPatent (global patents)"
+      }
+    },
+    "legal.enforcement": {
+      "authority": {
+        "required": false,
+        "description": "Enforcement authority name."
+      },
+      "currency": {
+        "required": false,
+        "description": "ISO 4217 currency code such as CNY, USD or EUR."
+      },
+      "decision_date": {
+        "required": false,
+        "description": "Decision date in YYYY-MM-DD format where supported."
+      },
+      "decision_number": {
+        "required": false,
+        "description": "Enforcement decision number."
+      },
+      "decision_type": {
+        "required": false,
+        "description": "Decision type. Values: penalty, inspection, order, other."
+      },
+      "jurisdiction": {
+        "required": false,
+        "description": "Jurisdiction code such as CN, US or FR."
+      },
+      "legal_basis": {
+        "required": false,
+        "description": "Comma-separated legal basis citations."
+      },
+      "penalty_amount": {
+        "required": false,
+        "description": "Penalty amount as a numeric string."
+      },
+      "penalty_types": {
+        "required": false,
+        "description": "Comma-separated penalty types such as fine, disgorgement, license_revocation or business_suspension."
+      },
+      "regulatory_domain": {
+        "required": false,
+        "description": "Regulatory domain such as data_protection, securities, market_regulation or other."
+      },
+      "subject_names": {
+        "required": false,
+        "description": "Comma-separated sanctioned subject names."
+      }
+    },
+    "legal.judicial": {
+      "case_id": {
+        "required": false,
+        "description": "Provider-specific case identifier, e.g. CanLII case id."
+      },
+      "case_number": {
+        "required": false,
+        "description": "Case number, e.g. （2024）京01民终123号."
+      },
+      "case_type": {
+        "required": false,
+        "description": "Case type. Values: civil, criminal, administrative, other, enforcement."
+      },
+      "cause_of_action": {
+        "required": false,
+        "description": "Cause of action, e.g. 民间借贷纠纷."
+      },
+      "court": {
+        "required": false,
+        "description": "Court name."
+      },
+      "database_id": {
+        "required": false,
+        "description": "Provider-specific court database identifier, e.g. csc-scc or onca for CanLII."
+      },
+      "doc_type": {
+        "required": false,
+        "description": "Legacy provider-specific case document type. Unsupported values are ignored."
+      },
+      "document_type": {
+        "required": false,
+        "description": "New legal-service document type. Values: judgment, ruling, decision, order."
+      },
+      "judgment_date": {
+        "required": false,
+        "description": "Judgment date in YYYY-MM-DD format where supported."
+      },
+      "jurisdiction": {
+        "required": false,
+        "description": "Jurisdiction code such as CN, US, CA or ECHR."
+      },
+      "language": {
+        "required": false,
+        "description": "ISO 639-1 result language such as en or fr where supported."
+      },
+      "legal_basis": {
+        "required": false,
+        "description": "Comma-separated legal basis citations."
+      },
+      "procedure": {
+        "required": false,
+        "description": "Procedure stage. Values: first_instance, second_instance, retrial, other."
+      },
+      "respondent": {
+        "required": false,
+        "description": "Respondent country code for HUDOC, e.g. TUR, FRA or RUS."
+      },
+      "service": {
+        "required": false,
+        "description": "Provider-specific service override, e.g. case or casekw for pkulaw."
+      }
+    },
+    "legal.legislation": {
+      "agency": {
+        "required": false,
+        "description": "Publishing agency slug or name where supported."
+      },
+      "article_number": {
+        "required": false,
+        "description": "Article number, e.g. 第二十条."
+      },
+      "collection": {
+        "required": false,
+        "description": "Provider-specific document collection code, such as FR, CFR, USCODE or BILLS."
+      },
+      "congress": {
+        "required": false,
+        "description": "US Congress session number, e.g. 118 or 119."
+      },
+      "database_id": {
+        "required": false,
+        "description": "Provider-specific database identifier."
+      },
+      "date_from": {
+        "required": false,
+        "description": "Publication or effective date lower bound in YYYY-MM-DD format where supported."
+      },
+      "date_to": {
+        "required": false,
+        "description": "Publication date upper bound in YYYY-MM-DD format where supported."
+      },
+      "doc_type": {
+        "required": false,
+        "description": "Legacy provider-specific document type. Values depend on the selected Provider and unsupported values are ignored."
+      },
+      "document_number": {
+        "required": false,
+        "description": "Official document number, e.g. 主席令第X号 or 法释〔2020〕X号."
+      },
+      "effective_from": {
+        "required": false,
+        "description": "Effective date lower bound in YYYY, YYYY-MM or YYYY-MM-DD format."
+      },
+      "effective_status": {
+        "required": false,
+        "description": "Effective status. Values: effective, not_yet_effective, repealed."
+      },
+      "effective_to": {
+        "required": false,
+        "description": "Effective date upper bound in YYYY, YYYY-MM or YYYY-MM-DD format."
+      },
+      "historical": {
+        "required": false,
+        "description": "Whether to include historical document versions. Values: true or false."
+      },
+      "issuing_authority": {
+        "required": false,
+        "description": "Issuing authority or agency name."
+      },
+      "jurisdiction": {
+        "required": false,
+        "description": "Jurisdiction code such as CN, CN-GD, US, FR or JP."
+      },
+      "language": {
+        "required": false,
+        "description": "ISO 639-1 result language such as zh, en, fr or de."
+      },
+      "legal_level": {
+        "required": false,
+        "description": "Legal level. Values: local_regulation, statute, regulation, judicial_interpretation, ministerial_rule, decision, other, bill, decree."
+      },
+      "resource_kind": {
+        "required": false,
+        "description": "anysource-legal legislation resource kind. Values: rules, resources, all."
+      },
+      "service": {
+        "required": false,
+        "description": "Provider-specific service override, e.g. law or law-search for pkulaw."
+      },
+      "title": {
+        "required": false,
+        "description": "Provider-specific title or CFR title number."
+      }
+    },
+    "resource.image": {},
+    "security.intel": {
+      "ioc": {
+        "required": true,
+        "description": "Indicator of compromise: domain, IP, URL, or file hash"
+      }
+    },
+    "security.noise": {
+      "ip": {
+        "required": true,
+        "description": "Single IPv4 address to check, e.g. 8.8.8.8"
+      }
+    },
+    "security.scan": {
+      "ioc": {
+        "required": true,
+        "description": "Indicator of compromise to scan: domain, IP, URL, or file hash (MD5/SHA1/SHA256)"
+      }
+    },
+    "security.vuln": {
+      "type": {
+        "required": true,
+        "description": "Query intent: cve (CVE ID), commit (40-char hex), package (ecosystem:name@version, ecosystem is case-sensitive). Put the identifier in value and use the same identifier as query."
+      },
+      "value": {
+        "required": true,
+        "description": "Identifier matching the type: CVE ID / 40-char hex / ecosystem:name@version. Comma-separated for a batch; duplicates are removed automatically.\nEcosystems must use the exact, case-sensitive registry name: npm, PyPI, Maven, NuGet, RubyGems, crates.io, Go, Packagist, Hex, Pub, CRAN. Maven uses Maven:groupId:artifactId@version; OS packages usually need a release suffix such as Debian:12 or Alpine:v3.16.\nTo make sure every item is checked, pass at most 5 CVE IDs or 1000 package entries per call.\nAn empty list can also mean a misspelled name or version, so verify the spelling before concluding there is no vulnerability.\ne.g.\n{\"type\": \"cve\", \"value\": \"CVE-2021-44228\"}\n{\"type\": \"package\", \"value\": \"PyPI:jinja2@2.4.1\"}\n{\"type\": \"commit\", \"value\": \"6879efc2c1596d11a6a6ad296f80063b558d5e0f\"}"
+      }
+    },
+    "social_media.social_media": {
+      "keyword": {
+        "required": false,
+        "description": "AI large models / Python developer / Musk (Search keywords take precedence over query fields)"
+      },
+      "region": {
+        "required": false,
+        "description": "Beijing / Shanghai / Guangdong (Region filtering only works when type=weibo_hot)"
+      },
+      "type": {
+        "required": false,
+        "description": "type：weibo / weibo_hot / zhihu / zhihu_hot / x_top / x_latest / x_media / x_people / x_lists / reddit_post / reddit_community / reddit_comment / reddit_media / reddit_people / linkedin_people / linkedin_jobs / linkedin_company / linkedin_posts / wechatmp（Target platforms and search patterns）"
+      }
+    },
+    "travel.flight": {
+      "adults": {
+        "required": false,
+        "description": "Number of adults"
+      },
+      "arrival": {
+        "required": true,
+        "description": "Arrival airport IATA 3-letter code"
+      },
+      "cabin_class": {
+        "required": false,
+        "description": "Cabin class. Valid values: Economy, Business, First, PremiumEconomy. Representing: economy, business, first class, premium economy respectively"
+      },
+      "children": {
+        "required": false,
+        "description": "Number of children"
+      },
+      "currency": {
+        "required": false,
+        "description": "Currency code. Examples: USD, CNY"
+      },
+      "date": {
+        "required": true,
+        "description": "15/06/2026 / 2026-06-15 (departure date)"
+      },
+      "departure": {
+        "required": true,
+        "description": "Departure airport IATA 3-letter code (e.g., `PEK`, `LAX`)"
+      },
+      "destination": {
+        "required": false,
+        "description": "SFO / London (destination IATA code or city name)"
+      },
+      "infants": {
+        "required": false,
+        "description": "Number of infants"
+      },
+      "origin": {
+        "required": false,
+        "description": "HAN / PEK / Beijing (origin IATA code or city name)"
+      },
+      "return_date": {
+        "required": false,
+        "description": "25/06/2026 (return date, empty = one-way)"
+      },
+      "type": {
+        "required": false,
+        "description": "FlightSearch (flight ticket search)"
+      }
+    },
+    "travel.flight_status": {
+      "date": {
+        "required": false,
+        "description": "Flight date in YYYY-MM-DD format, defaults to today"
+      },
+      "departure": {
+        "required": true,
+        "description": "Optional departure airport IATA code for disambiguation"
+      },
+      "flight_number": {
+        "required": true,
+        "description": "IATA flight number, e.g. DL47, CA981"
+      },
+      "type": {
+        "required": false,
+        "description": "FlightStatus (optional; tag already selects status mode)"
+      }
+    }
+  }
+}

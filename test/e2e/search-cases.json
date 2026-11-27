@@ -34,15 +34,9 @@
     "query": "Attention Is All You Need",
     "tag": "academic.paper",
     "params": {
-      "year_from": "2017",
-      "year_to": "2018",
       "authors": "Ashish Vaswani",
-      "categories": "cs.CL",
-      "kind": "abstract",
-      "domain": "arxiv.org",
-      "citation_doi": "10.48550/arXiv.1706.03762",
-      "citation_count": "100",
-      "venue": "NeurIPS"
+      "year": "2017-2018",
+      "venue": "Advances in Neural Information Processing Systems"
     },
     "max_results": 1
   },
@@ -170,7 +164,8 @@
     "query": "upcoming company earnings",
     "tag": "finance.calendar",
     "params": {
-      "type": "earnings"
+      "type": "earnings",
+      "period": "90d"
     },
     "max_results": 1
   },
@@ -644,11 +639,8 @@
     "query": "transformer neural network",
     "tag": "academic.paper",
     "params": {
-      "data_source": "arxiv",
-      "category": "cs.LG",
-      "field": "ti",
-      "sort": "date",
-      "order": "desc"
+      "publication_type": "preprint",
+      "sort": "date_desc"
     },
     "max_results": 1
   },
@@ -656,32 +648,11 @@
     "query": "transformer neural network",
     "tag": "academic.paper",
     "params": {
-      "data_source": "openalex",
       "language": "en",
       "min_citations": "5",
       "open_access": "true",
-      "type": "article"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "source": "MED",
-      "date_type": "pdat",
-      "field": "tiab"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "source": "PMC",
-      "has_pdf": "true",
       "publication_type": "journal_article",
-      "journal": "Nature"
+      "sort": "cited"
     },
     "max_results": 1
   },
@@ -689,7 +660,8 @@
     "query": "diabetes",
     "tag": "academic.paper",
     "params": {
-      "source": "PPR"
+      "year": "2017",
+      "sort": "date_asc"
     },
     "max_results": 1
   },
@@ -697,7 +669,8 @@
     "query": "diabetes",
     "tag": "academic.paper",
     "params": {
-      "source": "AGR"
+      "publication_type": "journal_article",
+      "venue": "Nature"
     },
     "max_results": 1
   },
@@ -705,7 +678,25 @@
     "query": "diabetes",
     "tag": "academic.paper",
     "params": {
-      "source": "PAT"
+      "publication_type": "preprint"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "publication_type": "review",
+      "year": "2022-"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "diabetes",
+    "tag": "academic.paper",
+    "params": {
+      "publication_type": "book_chapter",
+      "year": "-2020"
     },
     "max_results": 1
   },
@@ -818,8 +809,7 @@
     "query": "Attention Is All You Need",
     "tag": "academic.paper",
     "params": {
-      "doi": "10.48550/arXiv.1706.03762",
-      "document_type": "research"
+      "doi": "10.48550/arXiv.1706.03762"
     },
     "max_results": 1
   },
@@ -846,7 +836,8 @@
     "tag": "finance.calendar",
     "params": {
       "type": "earnings",
-      "cn_code": "600519.SH"
+      "cn_code": "600519.SH",
+      "period": "90d"
     },
     "max_results": 1
   },
@@ -1015,6 +1006,24 @@
       "jurisdiction": "CA",
       "database_id": "car",
       "resource_kind": "rules"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "Environmental Protection Agency Clean Air Act Federal Register final rule",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "US",
+      "collection": "FR"
+    },
+    "max_results": 1
+  },
+  {
+    "query": "42 USC 7401 Clean Air Act",
+    "tag": "legal.legislation",
+    "params": {
+      "jurisdiction": "US",
+      "collection": "USCODE"
     },
     "max_results": 1
   }

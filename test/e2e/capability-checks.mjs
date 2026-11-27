@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { catalogCoverage, catalogDefinitions } from './catalog-checks.mjs';
+import { checkSearchResults } from './result-checks.mjs';
 
 const cases = [
 	{
@@ -11,7 +13,7 @@ const cases = [
 	{
 		query: 'AAPL',
 		tag: 'finance.fundamental',
-		params: { type: 'overview', symbol: 'AAPL' },
+		params: { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
 		sent: { type: 'overview', symbol: 'AAPL', cn_code: '' },
 		result: /AAPL.*Fundamental/i,
 	},
@@ -31,7 +33,7 @@ const cases = [
 	{
 		query: '贵州茅台 利润表',
 		tag: 'finance.fundamental',
-		params: { type: 'income', cn_code: '600519.SH' },
+		params: { type: 'income', cn_code: '600519.SH', symbol: 'AAPL' },
 		sent: { type: 'income', cn_code: '600519.SH', symbol: '' },
 		result: /600519.*利润表/i,
 	},
@@ -39,18 +41,11 @@ const cases = [
 		query: 'Hide on Bush',
 		tag: 'gaming.esports',
 		params: { type: 'player', game_name: 'Hide on Bush#KR1', region: 'kr' },
-		checkUrl(url) {
-			assert.notEqual(new URL(url).pathname, '/', 'Expected a player or match result');
-		},
 	},
 	{
 		query: 'Python Reddit comments',
 		tag: 'social_media.social_media',
 		params: { type: 'reddit_comment', keyword: 'Python' },
-		checkUrl(url) {
-			assert.equal(new URL(url).hostname, 'www.reddit.com');
-			assert.match(new URL(url).pathname, /\/comments\//);
-		},
 	},
 	{
 		query: 'Flight ticket parameters missing',
@@ -68,8 +63,8 @@ const cases = [
 	{
 		query: 'Upcoming company earnings',
 		tag: 'finance.calendar',
-		params: { type: 'earnings' },
-		sent: { type: 'earnings', period: '90d' },
+		params: { type: 'earnings', symbol: 'AAPL', period: '7d' },
+		sent: { type: 'earnings', symbol: 'AAPL', period: '90d' },
 		result: /earnings/i,
 	},
 	...['ranked', 'mastery', 'live_game', 'leaderboard'].map((type) => ({
@@ -102,6 +97,18 @@ const cases = [
 		params: { op: 'citation', id: '10.1038/s41586-021-03819-2' },
 		missing: ['OCI', 'id'],
 	},
+	{
+		query: 'Malformed match ID',
+		tag: 'gaming.esports',
+		params: { type: 'match_detail', match_id: 'garbage' },
+		missing: ['match_id'],
+	},
+	{
+		query: 'Boolean leaderboard division',
+		tag: 'gaming.esports',
+		params: { type: 'leaderboard', region: 'kr', tier: 'GOLD', division: false },
+		missing: ['division'],
+	},
 ];
 
 function checkItem(entry, item) {
@@ -115,9 +122,8 @@ function checkItem(entry, item) {
 	}
 	assert(!item.error, item.error);
 	assert(item.request_id);
-	assert.equal(item.results.length, 1);
+	checkSearchResults({ ...entry, max_results: 1 }, item.results);
 	if (entry.result) assert.match(item.results[0].title, entry.result);
-	if (entry.checkUrl) entry.checkUrl(item.results[0].url);
 }
 
 export function addCapabilityChecks(add, credential) {
@@ -156,10 +162,22 @@ export function addCapabilityChecks(add, credential) {
 			credential,
 			(items) => {
 				assert.equal(items.length, batch.length);
+				const failures = [];
 				for (const [i, item] of items.entries()) {
-					assert.equal(item.json.query_index ?? item.json.details?.query_index, i);
-					checkItem(batch[i], item.json);
+					try {
+						assert.equal(item.json.query_index ?? item.json.details?.query_index, i);
+						checkItem(batch[i], item.json);
+					} catch (error) {
+						failures.push(
+							batch[i].query +
+								' (' +
+								(item.json.request_id ?? item.json.details?.request_id ?? 'local') +
+								'): ' +
+								error.message,
+						);
+					}
 				}
+				assert.equal(failures.length, 0, failures.join('\n'));
 			},
 		);
 	}
@@ -169,50 +187,89 @@ export function checkCapabilityRequests(requests, tests) {
 	const returnedIds = new Set(
 		tests.flatMap((test) => (test.results ?? []).map((item) => item.request_id)),
 	);
+	const failures = [];
 	for (const entry of cases) {
-		const sent = requests.filter((r) => r.body?.tag === entry.tag && r.body.query === entry.query);
-		if (entry.missing && !entry.status) {
-			assert.equal(sent.length, 0, entry.query);
-			continue;
+		try {
+			const sent = requests.filter(
+				(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
+			);
+			if (entry.missing && !entry.status) {
+				assert.equal(sent.length, 0, entry.query);
+				continue;
+			}
+			assert.equal(sent.length, 1, entry.query);
+			assert.equal(sent[0].status, entry.status ?? 200, entry.query);
+			assert(sent[0].request_id && returnedIds.has(sent[0].request_id), entry.query);
+			assert.deepEqual(sent[0].body.params, entry.sent ?? entry.params);
+		} catch (error) {
+			failures.push(entry.query + ': ' + error.message);
 		}
-		assert.equal(sent.length, 1, entry.query);
-		assert.equal(sent[0].status, entry.status ?? 200, entry.query);
-		assert(sent[0].request_id && returnedIds.has(sent[0].request_id), entry.query);
-		assert.deepEqual(sent[0].body.params, entry.sent ?? entry.params);
 	}
+	assert.equal(failures.length, 0, failures.join('\n'));
 }
 
-export function checkCatalogRequests(inputs, requests, domains) {
-	const byId = new Map(requests.map((request) => [request.request_id, request]));
-	const covered = new Map();
-	for (const [id, input] of inputs) {
-		const sent = byId.get(id);
-		assert.equal(sent?.status, 200, id);
-		assert.equal(sent.code, 0);
-		for (const [key, value] of Object.entries(input)) {
-			if (key !== 'params') assert.deepEqual(sent.body[key], value, key);
-			else
-				for (const [field, v] of Object.entries(value))
-					assert.deepEqual(sent.body.params?.[field], v, field);
-		}
-		if (input.tag) {
-			const fields = covered.get(input.tag) ?? new Set();
-			for (const field of Object.keys(sent.body.params ?? {})) fields.add(field);
-			covered.set(input.tag, fields);
+export function catalogRequestReport(records, requests, domains) {
+	const byId = new Map(requests.filter((r) => r.request_id).map((r) => [r.request_id, r]));
+	const seen = new Set();
+	const bodies = [];
+	const failures = [];
+	let semanticChecks = 0;
+	let nonemptyOnly = 0;
+	for (const [index, { input, output, expectedParams }] of records.entries()) {
+		const id = output?.request_id ?? output?.details?.request_id;
+		try {
+			assert(
+				typeof id === 'string' && id && !seen.has(id),
+				'Missing or duplicate output request ID',
+			);
+			seen.add(id);
+			const sent = byId.get(id);
+			assert(sent, 'Expected a captured HTTP request');
+			const expected = expectedParams === undefined ? input : { ...input, params: expectedParams };
+			assert.deepEqual(
+				sent.body,
+				expected,
+				'Outgoing search body differs from the expected request',
+			);
+			bodies.push(sent.body);
+			assert(!output.error, output.error);
+			assert.equal(sent.status, 200, 'Expected a successful HTTP request');
+			assert.equal(sent.code, 0, 'Expected a successful REST response');
+			assert.equal(sent.resultCount, output.results?.length, 'Wire and node result counts differ');
+			if (output.metadata?.total_results !== undefined)
+				assert.equal(
+					output.metadata.total_results,
+					output.results.length,
+					'metadata.total_results differs from the returned count',
+				);
+			if (checkSearchResults(input, output.results)) semanticChecks++;
+			else nonemptyOnly++;
+		} catch (error) {
+			failures.push({ index, tag: input.tag ?? 'general', request_id: id, reason: error.message });
 		}
 	}
-	let tags = 0,
-		parameters = 0;
-	const missing = [];
-	for (const { sub_domains } of domains) {
-		for (const { sub_domain, params } of sub_domains) {
-			tags++;
-			if (!covered.has(sub_domain)) missing.push(sub_domain);
-			for (const field of Object.keys(params ?? {})) {
-				parameters++;
-				if (!covered.get(sub_domain)?.has(field)) missing.push(sub_domain + '.' + field);
-			}
-		}
-	}
-	return { requests: inputs.size, domains: domains.length, tags, parameters, missing };
+	return {
+		domains: domains.length,
+		...catalogCoverage(bodies, catalogDefinitions(domains)),
+		cases: records.length,
+		verified: records.length - failures.length,
+		semanticChecks,
+		nonemptyOnly,
+		failures,
+	};
+}
+
+export function checkCatalogRequests(report) {
+	assert(report.cases > 0, 'The catalog acceptance matrix is empty');
+	assert.equal(
+		report.failures.length,
+		0,
+		report.failures
+			.map(
+				({ index, tag, request_id, reason }) =>
+					'Catalog[' + index + '] ' + tag + ' (' + (request_id ?? 'no request ID') + '): ' + reason,
+			)
+			.join('\n'),
+	);
+	return report;
 }

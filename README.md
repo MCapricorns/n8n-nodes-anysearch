@@ -95,19 +95,25 @@ catalog rules to parameters entered as JSON or supplied by n8n expressions.
 | Capability | Parameters |
 | --- | --- |
 | `travel.flight_status` | Supply `flight_number`. The node sends `departure: ""` when the airport is omitted. |
-| `finance.fundamental` | For `overview`, supply a ticker such as `{"type":"overview","symbol":"AAPL"}`. The node fills omitted `cn_code` with `""`. An omitted `symbol` is also sent as `""` so the API can read the ticker from the query. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply `cn_code`. The node fills omitted `symbol` with `""`. |
-| `finance.calendar` and `finance.quote` | Earnings queries default to `period: "90d"`. Crypto quotes require `symbol`. |
-| `gaming.esports` | Player, ranked, mastery, and live-game queries require `region` and `game_name`, including names with a Riot tag. A leaderboard requires `region` and a match-detail lookup requires `match_id`. Division filters apply to leaderboard tiers from Diamond through Iron. |
+| `finance.fundamental` | For `overview`, the node sends `cn_code: ""` and uses the supplied `symbol`, or sends an empty symbol so the API can read the ticker from the query. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply `cn_code`. The node always sends `symbol: ""` for these five operations. |
+| `finance.calendar` and `finance.quote` | Every earnings calendar request sends `period: "90d"`, including when the input supplies a different period. Crypto quotes require `symbol`. |
+| `gaming.esports` | Player, ranked, mastery and live-game queries require a server `region` and a player name, with or without a Riot tag. Match details require an ID such as `KR_7482819248` or `EUW1_6723541890`. Leaderboards require a region. Use division `I`, `II`, `III` or `IV` with a tier from Diamond through Iron. The node checks the documented type, region, tier, division and queue before sending a request. |
 | `academic.citation` | For `op=citation`, supply an Open Citation Identifier in `id`, such as `06101801781-06180334099`. |
 
-Explicit values take precedence over defaults. Read conditional requirements in the current
-directory descriptions as well as the required flags. New tags and extra parameters pass
-through to AnySearch.
+Read each field's required flag and description together. Fixed values above also apply when
+an n8n expression supplies a conflicting value. New tags and extra parameters pass through
+to AnySearch. The reviewed catalog records the official wording and required flag for every
+field. [Parameter definitions](test/e2e/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
 
-Source selectors use the same JSON field: for example, finance.news accepts type=flash with
-news_src=sina, and social_media.social_media accepts type=reddit_post. The available tags,
+The node checks the source selector for finance flash news and the search type for social media.
+For example, finance.news accepts type=flash with news_src=sina, and social_media.social_media
+accepts type=reddit_post. Company overviews accept annual or quarter for period. The available tags,
 source selectors, and filtering behavior can change; refresh discovery instead of relying on
 an old example. Some documented fields apply only to particular upstream providers.
+
+The node accepts positive day ranges such as `13d`, plus `1y` and `5y`, for the documented
+quote-style finance operations. Macro indicators have their own periods. Esports mastery
+accepts a champion name or substring, and match lookups use a Riot platform prefix.
 
 ## Batch search
 
@@ -180,14 +186,18 @@ use the AnySearch REST API.
 ~~~bash
 npm ci
 npm test
+npm run test:catalog
 npm run lint
 npm run dev
 ~~~
 
 Use Node.js 24.22 or a newer supported LTS release for development.
 
-npm test builds the package and runs offline contracts, privacy/error checks, concurrent batch
-checks, and capability parameter-forwarding checks. These do not replace live service or n8n tests.
+npm test builds the package and exercises every reviewed parameter through Search and Batch
+Search. Offline tests also replay wrong-source, wrong-document, wrong-object and empty
+responses against the live runner's assertions. CI runs `npm run test:catalog` to compare
+every reviewed field, required flag and description with public discovery. It reports changed
+definitions and missing or obsolete matrix fields. Discovery uses no search quota.
 
 To run real n8n tests, install n8n separately, build the node, and point the runner at that
 installation. N8N_E2E_PACKAGE is the directory containing n8n's package.json; N8N_E2E_NODE
@@ -206,11 +216,18 @@ This mode supports anonymous access. It checks live flight, financial, esports a
 results, field-specific failures, and the HTTP requests sent by n8n. Set `ANYSEARCH_E2E_PACKAGE`
 to an unpacked npm package directory to test that artifact.
 
-For the broader catalog/source matrix, also set ANYSEARCH_E2E_CASES to the absolute path of
-test/e2e/search-cases.json. The runner compares each input with the actual HTTP request by
-request ID and checks coverage of every tag and parameter in the live catalog. Result arrays
-can be empty for narrow filters. Coverage measures parameter forwarding and API acceptance.
-Provider-specific filtering requires checking the returned sources. Live tests consume quota.
+For the catalog matrix, set `ANYSEARCH_E2E_CASES` to the absolute path of
+`test/e2e/search-cases.json` in either mode. The runner joins node outputs to captured HTTP
+requests by request ID. Positive acceptance cases require at least one populated result.
+The runner checks selected sources and document paths, identifies papers by DOI, and checks
+player and match identity. Its summary records failed cases with their request IDs. Field
+coverage counts parameters on the wire. Live searches consume quota.
+
+Use `npm run test:e2e -- --capabilities --single-catalog` to exercise each catalog case as an
+individual Search node. Custom matrix rows can provide `expectedParams` to describe the
+complete outgoing parameters after normalization. The runner sends only the REST input.
+The catalog summary counts source and object checks separately from cases whose evidence
+establishes a populated response.
 
 The runner imports encrypted test credentials into a new isolated n8n instance, executes real
 workflows, checks outgoing header presence and response diagnostics, and removes the instance

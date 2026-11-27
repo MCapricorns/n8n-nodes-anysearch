@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -11,6 +12,7 @@ import { createModelServer } from '../test/e2e/model-server.mjs';
 import { runFaultWorkflows } from '../test/e2e/fault-workflows.mjs';
 import {
 	addCapabilityChecks,
+	catalogRequestReport,
 	checkCapabilityRequests,
 	checkCatalogRequests,
 } from '../test/e2e/capability-checks.mjs';
@@ -24,6 +26,7 @@ const cli = path.join(n8nRoot, 'bin/n8n');
 const nodeExecutable = process.env.N8N_E2E_NODE || process.execPath;
 const apiKey = (process.env.ANYSEARCH_API_KEY || '').trim();
 const capabilityOnly = process.argv.includes('--capabilities');
+const singleCatalog = process.argv.includes('--single-catalog');
 assert(apiKey || capabilityOnly, 'Set ANYSEARCH_API_KEY for authenticated live n8n tests');
 const work = await fs.mkdtemp(path.join(os.tmpdir(), 'anysearch-n8n-e2e-'));
 const output = path.resolve(process.env.N8N_E2E_OUTPUT || path.join(work, 'evidence'));
@@ -50,7 +53,7 @@ const redact = (value) =>
 		.join('[REDACTED]')
 		.replace(/as_sk_[A-Za-z0-9_-]+/g, '[REDACTED]')
 		.replace(/(?:password|api_key)\s*[:=]\s*[^\s,"}]+/gi, '[REDACTED]');
-function invoke(args, extraEnv = {}) {
+function invoke(args, extraEnv = {}, timeoutMs = 300000) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(nodeExecutable, [cli, ...args], {
 			cwd: work,
@@ -68,7 +71,7 @@ function invoke(args, extraEnv = {}) {
 		const timer = setTimeout(() => {
 			child.kill();
 			reject(new Error('n8n CLI timed out'));
-		}, 300000);
+		}, timeoutMs);
 		child.on('error', (error) => {
 			clearTimeout(timer);
 			reject(error);
@@ -104,8 +107,10 @@ function executionFrom(stdout) {
 	throw new Error('n8n did not return execution JSON');
 }
 const modelServer = capabilityOnly ? undefined : await createModelServer();
-const catalogRequests = new Map();
-const catalogFile = process.env.ANYSEARCH_E2E_CASES;
+const catalogRecords = [];
+const catalogFile =
+	process.env.ANYSEARCH_E2E_CASES ||
+	(singleCatalog ? path.join(root, 'test/e2e/search-cases.json') : undefined);
 const tests = [];
 const nodes = [
 	{
@@ -131,7 +136,22 @@ function add(name, parameters, credential = 'valid', check = () => {}) {
 	};
 	nodes.push(node);
 	connections.Start.main[0].push({ node: name, type: 'main', index: 0 });
-	tests.push({ name, check });
+	tests.push({
+		name,
+		check(items) {
+			check(items);
+			for (const { json } of items) {
+				if (parameters.resource === 'extract' && !json.error)
+					assert.equal(json.url, parameters.url);
+				if (Array.isArray(json.results) && json.metadata?.total_results !== undefined)
+					assert.equal(
+						json.metadata.total_results,
+						json.results.length,
+						'metadata.total_results differs from the returned count',
+					);
+			}
+		},
+	});
 }
 async function addStandardTests() {
 	function searchCheck(items, max = 2) {
@@ -139,6 +159,13 @@ async function addStandardTests() {
 		assert.equal(typeof items[0].json.request_id, 'string');
 		assert(Array.isArray(items[0].json.results));
 		assert(items[0].json.results.length > 0 && items[0].json.results.length <= max);
+	}
+	function anonymousCheck(items) {
+		if (items[0]?.json.details?.http_status !== 402) return searchCheck(items);
+		assert.equal(items.length, 1);
+		assert(items[0].json.details.request_id);
+		assert.match(items[0].json.error, /quota/i);
+		assert.doesNotMatch(JSON.stringify(items), /as_sk_|api_key=|password=/i);
 	}
 	add(
 		'Authenticated Search',
@@ -160,7 +187,7 @@ async function addStandardTests() {
 			options: { maxResults: 2, simplify: false },
 		},
 		null,
-		searchCheck,
+		anonymousCheck,
 	);
 	add(
 		'Blank Key Search',
@@ -171,7 +198,7 @@ async function addStandardTests() {
 			options: { maxResults: 2, simplify: false },
 		},
 		'blank',
-		searchCheck,
+		anonymousCheck,
 	);
 	add(
 		'Invalid Key',
@@ -188,41 +215,6 @@ async function addStandardTests() {
 		'invalid',
 		(items) => {
 			assert.equal(items[0].json.details.http_status, 401);
-		},
-	);
-	add('Domains', { resource: 'capability', operation: 'getDomains' }, 'valid', (items) => {
-		assert(items.length > 0);
-		assert(items.every((item) => typeof item.json.domain === 'string'));
-	});
-	add(
-		'Subdomains',
-		{
-			resource: 'capability',
-			operation: 'getSubDomains',
-			domains: [
-				'academic',
-				'agriculture',
-				'business',
-				'code',
-				'energy',
-				'environment',
-				'film',
-				'finance',
-				'gaming',
-				'general',
-				'health',
-				'ip',
-				'legal',
-				'resource',
-				'security',
-				'social_media',
-				'travel',
-			],
-		},
-		'valid',
-		(items) => {
-			assert.equal(items.length, 17);
-			assert(items.every((item) => Array.isArray(item.json.sub_domains)));
 		},
 	);
 	add(
@@ -324,36 +316,6 @@ async function addStandardTests() {
 			assert([400, 422].includes(items[0].json.details.http_status));
 		},
 	);
-	if (catalogFile) {
-		const cases = JSON.parse(await fs.readFile(catalogFile, 'utf8'));
-		const dateAfter = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
-		for (const entry of cases) {
-			if (entry.tag === 'travel.flight') {
-				entry.params.date = dateAfter(30);
-				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
-			}
-			if (entry.tag === 'travel.flight_status' && entry.params?.date)
-				entry.params.date = dateAfter(0);
-		}
-		for (let index = 0; index < cases.length; index += 5) {
-			const group = cases.slice(index, index + 5);
-			add(
-				'Catalog ' + (index / 5 + 1),
-				{ resource: 'search', operation: 'batchSearch', queries: JSON.stringify(group) },
-				'valid',
-				(items) => {
-					assert.equal(items.length, group.length);
-					for (let item = 0; item < items.length; item++) {
-						assert(!items[item].json.error, group[item].tag + ': ' + items[item].json.error);
-						assert(Array.isArray(items[item].json.results));
-						assert.equal(items[item].json.query_index, item);
-						assert(items[item].json.request_id);
-						catalogRequests.set(items[item].json.request_id, group[item]);
-					}
-				},
-			);
-		}
-	}
 	nodes.push(
 		{
 			id: 'agent',
@@ -482,12 +444,89 @@ async function addStandardTests() {
 	});
 }
 
+async function addCatalogTests(credential) {
+	const { tags } = JSON.parse(await fs.readFile(path.join(root, 'test/e2e/catalog.json'), 'utf8'));
+	const reviewedDomains = [...new Set(Object.keys(tags).map((tag) => tag.split('.')[0]))];
+	add('Domains', { resource: 'capability', operation: 'getDomains' }, credential, (items) => {
+		assert(items.length > 0);
+		assert(items.every((item) => typeof item.json.domain === 'string'));
+	});
+	add(
+		'Subdomains',
+		{
+			resource: 'capability',
+			operation: 'getSubDomains',
+			domains: reviewedDomains,
+		},
+		credential,
+		(items) => {
+			assert.equal(items.length, reviewedDomains.length);
+			assert(items.every((item) => Array.isArray(item.json.sub_domains)));
+		},
+	);
+	if (catalogFile) {
+		const cases = JSON.parse(await fs.readFile(catalogFile, 'utf8'));
+		const dateAfter = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+		for (const entry of cases) {
+			if (entry.tag === 'travel.flight') {
+				entry.params.date = dateAfter(30);
+				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
+			}
+			if (entry.tag === 'travel.flight_status' && entry.params?.date)
+				entry.params.date = dateAfter(0);
+		}
+		const groupSize = singleCatalog ? 1 : 5;
+		for (let index = 0; index < cases.length; index += groupSize) {
+			const group = cases.slice(index, index + groupSize);
+			const records = group.map(({ expectedParams, ...input }) => ({ input, expectedParams }));
+			catalogRecords.push(...records);
+			const { query, max_results, ...options } = records[0].input;
+			add(
+				'Catalog ' + (index / groupSize + 1),
+				singleCatalog
+					? {
+							resource: 'search',
+							operation: 'search',
+							query,
+							options: {
+								...options,
+								params: JSON.stringify(options.params),
+								maxResults: max_results,
+								simplify: false,
+							},
+						}
+					: {
+							resource: 'search',
+							operation: 'batchSearch',
+							queries: JSON.stringify(records.map((record) => record.input)),
+						},
+				credential,
+				(items) => {
+					assert.equal(items.length, group.length);
+					for (const [i, row] of records.entries()) row.output = items[i].json;
+					for (let item = 0; item < items.length; item++) {
+						assert(!items[item].json.error, group[item].tag + ': ' + items[item].json.error);
+						assert(Array.isArray(items[item].json.results));
+						if (!singleCatalog) assert.equal(items[item].json.query_index, item);
+						assert(items[item].json.request_id);
+					}
+				},
+			);
+		}
+	}
+}
+
 if (!capabilityOnly) await addStandardTests();
+if (!capabilityOnly || catalogFile) await addCatalogTests(apiKey ? 'valid' : null);
 addCapabilityChecks(add, apiKey ? 'valid' : null);
 async function importCredentials() {
 	const coreRoot = path.dirname(engineRequire.resolve('n8n-core/package.json'));
-	const { CipherAes256CBC } = engineRequire(path.join(coreRoot, 'dist/encryption/aes-256-cbc.js'));
-	const cipher = new CipherAes256CBC();
+	const cipherPath = path.join(coreRoot, 'dist/encryption/aes-256-cbc.js');
+	const cipher = existsSync(cipherPath)
+		? new (engineRequire(cipherPath).CipherAes256CBC)()
+		: new (engineRequire(path.join(coreRoot, 'dist/encryption/cipher.js')).Cipher)({
+				encryptionKey,
+			});
 	function credential(id, type, data, key = encryptionKey) {
 		return { id, name: id, type, data: cipher.encrypt(JSON.stringify(data), key) };
 	}
@@ -529,6 +568,11 @@ const summary = {
 	nodeBuildSha256: createHash('sha256')
 		.update(await fs.readFile(path.join(packageRoot, 'dist/nodes/AnySearch/AnySearch.node.js')))
 		.digest('hex'),
+	capabilityBuildSha256: createHash('sha256')
+		.update(
+			await fs.readFile(path.join(packageRoot, 'dist/nodes/AnySearch/capabilityParameters.js')),
+		)
+		.digest('hex'),
 	tests: [],
 	requests: [],
 };
@@ -563,10 +607,14 @@ try {
 	assert.equal(imported.code, 0, imported.stderr + imported.stdout);
 	const traceFile = path.join(output, 'requests.jsonl');
 	await fs.writeFile(traceFile, '');
-	const execution = await invoke(['execute', '--id=' + workflow.id, '--rawOutput'], {
-		NODE_OPTIONS: '--require=' + path.join(root, 'test/e2e/http-trace.cjs'),
-		ANYSEARCH_E2E_TRACE: traceFile,
-	});
+	const execution = await invoke(
+		['execute', '--id=' + workflow.id, '--rawOutput'],
+		{
+			NODE_OPTIONS: '--require=' + path.join(root, 'test/e2e/http-trace.cjs'),
+			ANYSEARCH_E2E_TRACE: traceFile,
+		},
+		300000 + (singleCatalog ? catalogRecords.length * 60000 : 0),
+	);
 	let data;
 	try {
 		data = executionFrom(execution.stdout);
@@ -644,7 +692,40 @@ try {
 		summary.requests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
-	checkCapabilityRequests(summary.requests, summary.tests);
+	function verify(name, check) {
+		const record = { name, passed: true };
+		try {
+			check();
+		} catch (error) {
+			record.passed = false;
+			record.failure = redact(error.message);
+		}
+		summary.tests.push(record);
+		console.log(JSON.stringify(record));
+	}
+	verify('Capability HTTP requests', () =>
+		checkCapabilityRequests(summary.requests, summary.tests),
+	);
+	if (catalogFile)
+		verify('Catalog requests and returned results', () => {
+			const domains = runData.Subdomains.at(-1).data.main[0].map((item) => item.json);
+			summary.catalogCoverage = catalogRequestReport(catalogRecords, summary.requests, domains);
+			checkCatalogRequests(summary.catalogCoverage);
+			if (path.resolve(catalogFile) === path.join(root, 'test/e2e/search-cases.json')) {
+				const listed = runData.Domains.at(-1).data.main[0].map((item) => item.json.domain);
+				assert.deepEqual(domains.map((item) => item.domain).sort(), listed.sort());
+				assert.deepEqual(
+					summary.catalogCoverage.unexpected,
+					[],
+					'Non-catalog parameters in the matrix',
+				);
+				assert.deepEqual(
+					summary.catalogCoverage.missing,
+					[],
+					'Live catalog fields missing from the matrix',
+				);
+			}
+		});
 	if (!capabilityOnly) {
 		const authenticatedId = summary.tests.find((test) => test.name === 'Authenticated Search')
 			?.results?.[0]?.request_id;
@@ -657,19 +738,6 @@ try {
 			'Missing Bearer header on authenticated search',
 		);
 		assert.equal(authenticated.status, 200);
-		if (catalogFile) {
-			const domains = runData.Subdomains.at(-1).data.main[0].map((item) => item.json);
-			summary.catalogCoverage = checkCatalogRequests(catalogRequests, summary.requests, domains);
-			if (path.resolve(catalogFile) === path.join(root, 'test/e2e/search-cases.json')) {
-				const listed = runData.Domains.at(-1).data.main[0].map((item) => item.json.domain);
-				assert.deepEqual(domains.map((item) => item.domain).sort(), listed.sort());
-				assert.deepEqual(
-					summary.catalogCoverage.missing,
-					[],
-					'Live catalog fields missing from the matrix',
-				);
-			}
-		}
 		for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
 			const requests = summary.requests.filter((request) => request.body?.query === query);
 			assert.equal(requests.length, 1);

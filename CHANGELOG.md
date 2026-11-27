@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.4 (2026-11-27)
+
+- Enforce the earnings calendar period, the unused fundamental ticker and esports parameter formats and choices in Search and Batch Search.
+- Verify source links, document types and exact record identities in acceptance runs. Report empty results and upstream mismatches with their request IDs.
+- Check every reviewed capability field through both search operations and compare field definitions with live discovery in CI.
+
 ## 1.1.3 (2026-11-26)
 
 - Supply the documented airport and ticker placeholders for flight status, company overviews and A-share fundamentals. Default earnings calendars to 90 days.

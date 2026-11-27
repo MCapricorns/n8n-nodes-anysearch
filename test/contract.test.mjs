@@ -8,11 +8,13 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { catalogCoverage } from './e2e/catalog-checks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const localRequire = createRequire(path.join(root, 'package.json'));
 const { AnySearch } = localRequire('./dist/nodes/AnySearch/AnySearch.node.js');
 const { AnySearchApi } = localRequire('./dist/credentials/AnySearchApi.credentials.js');
+const { missingParameterMessage } = localRequire('./dist/nodes/AnySearch/capabilityParameters.js');
 
 const node = {
 	id: 'contract-test',
@@ -628,35 +630,52 @@ test('search forwards capability parameters without dropping empty required valu
 	}
 });
 
-test('Search and Batch Search fill only documented defaults without changing input objects', async () => {
+test('Search and Batch Search apply defaults and fixed catalog values without changing inputs', async () => {
 	const examples = [
 		['travel.flight_status', { flight_number: 'CA981' }, { departure: '' }],
 		['travel.flight_status', { flight_number: 'CA981', departure: 'PEK' }, {}],
 		['finance.fundamental', { type: 'overview', symbol: 'AAPL' }, { cn_code: '' }],
 		['finance.fundamental', { type: 'overview' }, { cn_code: '', symbol: '' }],
+		[
+			'finance.fundamental',
+			{ type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
+			{ cn_code: '' },
+		],
+		['finance.fundamental', { type: 'overview', cn_code: null }, { symbol: '', cn_code: '' }],
 		...['income', 'balance', 'cashflow', 'indicator', 'holder'].map((type) => [
 			'finance.fundamental',
-			{ type, cn_code: '600519.SH' },
+			{ type, cn_code: '600519.SH', symbol: 'AAPL', period: '1y' },
 			{ symbol: '' },
 		]),
-		['finance.fundamental', { type: 'income', cn_code: '600519.SH', symbol: 'explicit' }, {}],
+		['finance.fundamental', { type: 'income', cn_code: 600519 }, { symbol: '' }],
+		[
+			'finance.fundamental',
+			{ type: ' balance ', cn_code: '000001.SZ', symbol: false },
+			{ type: 'balance', symbol: '' },
+		],
 		['finance.calendar', { type: 'earnings' }, { period: '90d' }],
-		['finance.calendar', { type: 'earnings', period: '7d' }, {}],
-		['finance.calendar', { type: 'dividends' }, {}],
+		...['7d', '90d', '', null, false, 7].map((period) => [
+			'finance.calendar',
+			{ type: 'earnings', symbol: 'AAPL', period },
+			{ period: '90d' },
+		]),
+		['finance.calendar', { type: 'dividends', period: '7d' }, {}],
 		['travel.flight', { departure: 'PEK' }, {}],
 		['gaming.esports', { type: 'champion_rotation' }, {}],
 		['finance.fundamental', { type: 'new_type' }, {}],
 		['future.tag', { type: 'player', optional: false }, {}],
 	];
-	for (const [tag, input, defaults] of examples) {
+	for (const [tag, input, overrides] of examples) {
 		const params = Object.freeze(input);
 		for (const parameters of [
 			{ options: { tag, params: JSON.stringify(params) } },
+			{ options: { tag, params } },
 			{ operation: 'batchSearch', queries: [{ query: 'test', tag, params }] },
+			{ operation: 'batchSearch', queries: JSON.stringify([{ query: 'test', tag, params }]) },
 		]) {
 			const r = await runCase({ parameters });
 			assert.equal(r.requests.length, 1, tag);
-			assert.deepEqual(r.requests[0].body.params, { ...defaults, ...params });
+			assert.deepEqual(r.requests[0].body.params, { ...params, ...overrides });
 		}
 	}
 });
@@ -696,7 +715,7 @@ test('conditional fields and blank required values fail locally with their field
 		['gaming.esports', { type: 'match_detail', match_id: null }, 'match_id'],
 		['finance.quote', { type: 'crypto', symbol: false }, 'symbol'],
 		['finance.fundamental', { type: 'income', cn_code: ' ', symbol: '' }, 'cn_code'],
-		['finance.fundamental', { type: 'overview', cn_code: null }, 'cn_code'],
+		['finance.fundamental', { type: 'overview', symbol: null }, 'symbol'],
 		['travel.flight_status', { flight_number: '' }, 'flight_number'],
 		['travel.flight_status', { flight_number: 981 }, 'flight_number'],
 		['travel.flight', { departure: '' }, 'departure'],
@@ -720,6 +739,244 @@ test('conditional fields and blank required values fail locally with their field
 		const r = await runCase({ parameters: { options: { tag, params } } });
 		assert.deepEqual(r.requests[0].body.params, params);
 	}
+});
+
+const leaderboard = { type: 'leaderboard', region: 'kr', tier: 'GOLD' };
+for (const [field, base, values] of [
+	[
+		'match_id',
+		{ type: 'match_detail' },
+		[
+			'garbage',
+			'NOTAREGION123_9',
+			'ZZ_123',
+			'SEA_1',
+			'EUW_42',
+			'123_45',
+			'KR_1_2',
+			'NA1_A2',
+			'EUW1_23x',
+			'KR_-1',
+			'KR_12 ',
+			42,
+			false,
+		],
+	],
+	['division', leaderboard, [false, null, '', 0, ' ', 'V', '1', 'I/II', [], {}]],
+	['tier', leaderboard, [null, '', 'gold', 'WOOD', false]],
+	['queue', leaderboard, [null, '', 'ARAM', 5]],
+	['region', { type: 'player', game_name: 'Tyler1' }, ['invalid', '', 1, false]],
+	['game_name', { type: 'player', region: 'kr' }, ['#KR1', 'Faker#', 'Faker#KR#1', ' #KR1']],
+	['type', { region: 'kr' }, ['leadrboard']],
+]) {
+	test(
+		'invalid esports ' + field + ' fails before HTTP in single and mixed batch searches',
+		async () => {
+			for (const value of values) {
+				const tag = 'gaming.esports';
+				const params = { ...base, [field]: value };
+				const pattern = new RegExp('\\b' + field + '\\b');
+				const single = await runCase({ parameters: { options: { tag, params } } });
+				assert.equal(single.requests.length, 0, field);
+				assert.match(single.message, pattern);
+				const batch = await runCase({
+					parameters: {
+						operation: 'batchSearch',
+						queries: [{ query: 'before' }, { query: 'invalid', tag, params }, { query: 'after' }],
+					},
+				});
+				assert.deepEqual(
+					batch.requests.map((r) => r.body.query),
+					['before', 'after'],
+				);
+				const [before, invalid, after] = batch.output[0].map((item) => item.json);
+				assert.equal(before.query_index, 0);
+				assert.equal(invalid.details.query_index, 1);
+				assert.match(invalid.error, pattern);
+				assert.equal(invalid.details.request_id, undefined);
+				assert.equal(after.query_index, 2);
+			}
+		},
+	);
+}
+
+test('esports accepts the catalog formats and enforces tier-dependent divisions', async () => {
+	const tag = 'gaming.esports';
+	const examples = [
+		...['KR_7482819248', 'NA1_4912837465', 'EUW1_6723541890'].map((match_id) => ({
+			type: 'match_detail',
+			match_id,
+		})),
+		...[
+			'BR1',
+			'EUN1',
+			'JP1',
+			'LA1',
+			'LA2',
+			'ME1',
+			'OC1',
+			'PH2',
+			'RU',
+			'SG2',
+			'TH2',
+			'TR1',
+			'TW2',
+			'VN2',
+			'PBE1',
+		].map((platform) => ({
+			type: 'match_detail',
+			match_id: platform + '_123',
+		})),
+		...['kr', 'na', 'euw', 'eune', 'jp', 'br', 'la1', 'la2', 'oc', 'tr', 'ru', 'sg', 'sea'].map(
+			(region) => ({ type: 'player', game_name: 'Tyler1', region }),
+		),
+		...['I', 'II', 'III', 'IV'].map((division) => ({ ...leaderboard, division })),
+		...['DIAMOND', 'EMERALD', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON'].map((tier) => ({
+			...leaderboard,
+			tier,
+			division: 'II',
+		})),
+		...['RANKED_SOLO_5x5', 'RANKED_FLEX_SR'].map((queue) => ({
+			type: 'ranked',
+			game_name: 'Hide on Bush#KR1',
+			region: 'kr',
+			queue,
+		})),
+	];
+	for (const tier of ['MASTER', 'GRANDMASTER', 'CHALLENGER']) {
+		examples.push({ ...leaderboard, tier });
+		const r = await runCase({
+			parameters: { options: { tag, params: { ...leaderboard, tier, division: 'IV' } } },
+		});
+		assert.equal(r.requests.length, 0);
+		assert.match(r.message, /division/);
+	}
+	for (const params of examples) {
+		const r = await runCase({ parameters: { options: { tag, params } } });
+		assert.equal(r.outcome, 'returned', r.message);
+		assert.deepEqual(r.requests[0].body.params, params);
+	}
+});
+
+test('invalid source selectors and overview periods fail before HTTP on both entry points', async () => {
+	for (const [tag, base, field, valid] of [
+		['finance.news', { type: 'flash' }, 'news_src', 'sina'],
+		['social_media.social_media', { keyword: 'Python' }, 'type', 'linkedin_jobs'],
+		['finance.fundamental', { type: 'overview', symbol: 'AAPL' }, 'period', 'quarter'],
+	]) {
+		for (const value of [false, null, '', 'unknown', [], valid]) {
+			const params = { ...base, [field]: value };
+			for (const parameters of [
+				{ options: { tag, params } },
+				{ operation: 'batchSearch', queries: [{ query: 'selector', tag, params }] },
+			]) {
+				const r = await runCase({ parameters });
+				if (value === valid) {
+					assert.equal(r.requests[0].body.params[field], valid);
+				} else {
+					assert.equal(r.requests.length, 0, field);
+					assert.match(r.message ?? r.output[0][0].json.error, new RegExp(field));
+				}
+			}
+		}
+	}
+});
+
+test('finance ranges and mastery champion filters reject invalid types and preserve legitimate values', async () => {
+	const invalidPeriods = [false, true, 7, null, {}, [], '', ' ', '7days', '-7d', '2y'];
+	const validPeriods = ['7d', '14d', '30d', '90d', '180d', '1d', '23d', '1234d', '1y', '5y'];
+	for (const [tag, base, field, valid, invalid] of [
+		['finance.quote', { type: 'stock', symbol: 'AAPL' }, 'period', validPeriods, invalidPeriods],
+		['finance.calendar', { type: 'dividends' }, 'period', validPeriods, invalidPeriods],
+		['finance.calendar', { type: 'economic' }, 'period', ['2d'], [false]],
+		['finance.calendar', { type: 'ipos' }, 'period', ['2d'], [false]],
+		['finance.news', { type: 'announcement' }, 'period', validPeriods, invalidPeriods],
+		['finance.news', { type: 'flash', news_src: 'sina' }, 'period', ['1d'], [false]],
+		['finance.macro', { type: 'gdp' }, 'period', ['2y'], []],
+		['finance.quote', { type: 'future_type' }, 'period', ['future_window'], []],
+		[
+			'gaming.esports',
+			{ type: 'mastery', region: 'kr', game_name: 'Hide on Bush#KR1' },
+			'champion',
+			['Lee', 'vi', '李青'],
+			[false, true, 0, null, {}, [], '', '   '],
+		],
+	]) {
+		for (const value of [...valid, ...invalid]) {
+			const params = { ...base, [field]: value };
+			for (const parameters of [
+				{ options: { tag, params: JSON.stringify(params) } },
+				{ operation: 'batchSearch', queries: [{ query: 'range or champion', tag, params }] },
+			]) {
+				const r = await runCase({ parameters });
+				if (valid.includes(value)) {
+					assert.deepEqual(r.requests[0].body.params, params);
+				} else {
+					assert.equal(r.requests.length, 0, tag + '.' + field);
+					assert.match(r.message ?? r.output[0][0].json.error, new RegExp(field));
+				}
+			}
+		}
+	}
+});
+
+test('every reviewed catalog parameter reaches HTTP on both entry points', async () => {
+	const { tags } = localRequire('./test/e2e/catalog.json');
+	const cases = localRequire('./test/e2e/search-cases.json');
+	for (const [tag, fields] of Object.entries(tags)) {
+		for (const [field, { required }] of Object.entries(fields)) {
+			const message = missingParameterMessage(
+				"Missing required params for tag '" + tag + "': " + field + '.',
+			);
+			assert.equal(Boolean(message), required, tag + '.' + field);
+		}
+	}
+	for (const batch of [false, true]) {
+		const bodies = [];
+		for (const { query, max_results, ...fields } of cases) {
+			const input = { query, ...fields, max_results };
+			const parameters = batch
+				? { operation: 'batchSearch', queries: [input] }
+				: { query, options: { ...fields, maxResults: max_results } };
+			const r = await runCase({ parameters });
+			assert.equal(r.requests.length, 1, fields.tag ?? query);
+			const body = r.requests[0].body;
+			const expected = { ...input };
+			if (fields.tag === 'finance.calendar' && fields.params.type === 'earnings') {
+				expected.params = { ...fields.params, period: '90d' };
+			}
+			assert.deepEqual(body, expected);
+			bodies.push(body);
+		}
+		const coverage = catalogCoverage(bodies, tags);
+		assert.deepEqual(coverage.missing, []);
+		assert.deepEqual(coverage.unexpected, []);
+	}
+});
+
+test('existing workflows can forward provider-specific paper fields outside the current catalog', async () => {
+	const params = {
+		data_source: 'arxiv',
+		source: 'MED',
+		categories: 'cs.CL',
+		category: 'cs.LG',
+		domain: 'arxiv.org',
+		citation_count: '100',
+		citation_doi: '10.48550/arXiv.1706.03762',
+		order: 'desc',
+		sort: 'date',
+		date_type: 'pdat',
+		field: 'ti',
+		journal: 'Nature',
+		type: 'article',
+		has_pdf: 'true',
+		kind: 'abstract',
+		year_from: '2017',
+		year_to: '2018',
+		document_type: 'research',
+	};
+	const r = await runCase({ parameters: { options: { tag: 'academic.paper', params } } });
+	assert.deepEqual(r.requests[0].body.params, params);
 });
 
 test('catalog HTTP 400 diagnostics survive stopping, continuing, batch output and thrown HTTP errors', async () => {
