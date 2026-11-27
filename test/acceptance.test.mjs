@@ -118,6 +118,47 @@ test('a complete expected request can include documented normalization and no ex
 	assert.equal(checkMatrix(generic.records, generic.requests, domains).nonemptyOnly, 1);
 });
 
+test('fundamental overview distinguishes similar tickers and fiscal periods', () => {
+	const input = {
+		query: 'Apple Inc (AAPL) fundamentals',
+		tag: 'finance.fundamental',
+		params: { type: 'overview', symbol: 'AAPL', cn_code: '', period: 'annual' },
+	};
+	const annual = {
+		title: 'AAPL — Annual Fundamental',
+		url: 'https://site.financialmodelingprep.com/?ref=fundamental-AAPL',
+		content: 'Symbol: AAPL | ReportPeriod: annual | Income(2026 FY): Revenue=478.83B',
+	};
+	const wrongTicker = {
+		...annual,
+		title: 'APC.DE — Annual Fundamental',
+		content: 'Symbol: APC.DE | ReportPeriod: annual',
+	};
+	assert.equal(assessSearchResults(input, [annual]).status, 'verified');
+	assert.equal(assessSearchResults(input, [wrongTicker]).status, 'mismatch');
+	const inferred = { ...input, params: { type: 'overview', symbol: '', cn_code: '' } };
+	assert.equal(assessSearchResults(inferred, [wrongTicker]).status, 'mismatch');
+	assert.equal(
+		assessSearchResults({ ...inferred, query: 'Apple fundamentals' }, [annual]).status,
+		'unverified',
+	);
+	const quarter = {
+		...annual,
+		title: 'AAPL — Quarterly Fundamental',
+		content: 'Symbol: AAPL | ReportPeriod: quarter | Income(2026 Q4): Revenue=114.48B',
+	};
+	assert.equal(assessSearchResults(input, [quarter]).status, 'mismatch');
+	assert.equal(
+		assessSearchResults({ ...input, params: { ...input.params, period: 'quarter' } }, [quarter])
+			.status,
+		'verified',
+	);
+	assert.equal(
+		assessSearchResults(input, [{ ...annual, content: quarter.content }]).status,
+		'mismatch',
+	);
+});
+
 test('HTTP 200 and code zero with empty outputs fail every positive catalog case', () => {
 	const { records, requests } = matrix(
 		cases,

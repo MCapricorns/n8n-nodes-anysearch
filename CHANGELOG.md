@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.11 (2026-11-27)
+
+- Reject a comma-separated domain value inside a Get Sub-Domains array before sending a request. Continue to support saved workflows that use a single comma-separated string.
+- Show retry guidance when AnySearch returns HTTP 403 for a temporary access restriction.
+- Verify the returned ticker and fiscal period in international fundamentals acceptance checks. Record conflicting evidence as a mismatch and mark results with missing identifying evidence as unverified.
+
 ## 1.1.10 (2026-11-27)
 
 - Reject IANA-reserved IPv6 literals in Extract, including deprecated site-local and IPv4-compatible addresses. Keep public IPv4, IPv6, and the global translation prefix available.

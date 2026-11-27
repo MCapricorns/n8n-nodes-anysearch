@@ -570,6 +570,15 @@ test('sub-domain listing rejects an empty selection or non-string names locally'
 	}
 });
 
+test('sub-domain listing rejects a comma-separated value inside the array locally', async () => {
+	const r = await runCase({
+		parameters: { resource: 'capability', operation: 'getSubDomains', domains: ['code,finance'] },
+	});
+	assert.equal(r.outcome, 'error');
+	assert.match(r.message, /separate array entry/);
+	assert.equal(r.requests.length, 0);
+});
+
 test('sub-domain listing accepts a successful empty response for an unknown domain', async () => {
 	const r = await runCase({
 		parameters: { resource: 'capability', operation: 'getSubDomains', domains: ['unknown'] },
@@ -1188,6 +1197,26 @@ test('documented API errors retain their status, message, and supplied codes in 
 		assert.equal(r.context.code, -1);
 		assert.equal(r.context.error_code, errorCode);
 	}
+});
+
+test('temporary access restrictions expose retry guidance and keep public diagnostics', async () => {
+	const r = await runCase({
+		statusCode: 403,
+		response: {
+			code: -1,
+			error_code: 'access_temporarily_restricted',
+			message: 'Access is temporarily restricted. Please retry after the restriction expires.',
+			request_id: 'restriction-id',
+		},
+	});
+	assert.equal(
+		r.message,
+		'AnySearch access is temporarily restricted. Retry after the restriction expires.',
+	);
+	assert.equal(r.context.http_status, 403);
+	assert.equal(r.context.code, -1);
+	assert.equal(r.context.error_code, 'access_temporarily_restricted');
+	assert.equal(r.context.request_id, 'restriction-id');
 });
 
 test('missing capability parameters keep their diagnostics for returned and thrown HTTP errors', async () => {

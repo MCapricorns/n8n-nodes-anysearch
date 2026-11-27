@@ -845,8 +845,52 @@ function checkedAllParameters(params, checked) {
 	return Object.keys(params).every((field) => checked.includes(field));
 }
 
-function checkSelectedResult(tag, params, result) {
+function checkInternationalFundamental(params, query, result) {
+	const symbol = params.symbol || /\(([A-Z][A-Z\d.-]{0,14})\)/.exec(query ?? '')?.[1];
+	requireEvidence(symbol, 'The request does not identify an explicit ticker to verify');
+	const title = /^([\w.-]+)\s+[—–-]\s+(Annual|Quarterly) Fundamental$/i.exec(result.title ?? '');
+	const content = result.content ?? '';
+	const record = contentRecord(content);
+	const symbols = [
+		result.symbol,
+		record?.symbol,
+		title?.[1],
+		/(?:^|\|)\s*Symbol:\s*([^\s|]+)/i.exec(content)?.[1],
+	].filter((value) => typeof value === 'string' && value.trim());
+	requireEvidence(symbols.length, 'The fundamental result does not identify its ticker');
+	assert(
+		symbols.every((value) => value.trim().toUpperCase() === symbol.toUpperCase()),
+		'Expected fundamentals for ' + symbol,
+	);
+
+	const period = params.period ?? 'annual';
+	const periods = [
+		result.report_period,
+		record?.report_period,
+		title && (title[2].toLowerCase() === 'annual' ? 'annual' : 'quarter'),
+		/(?:^|\|)\s*ReportPeriod:\s*(annual|quarter)\b/i.exec(content)?.[1]?.toLowerCase(),
+		...[...content.matchAll(/\b(?:Income|Segments)\(\d{4}\s+(FY|Q[1-4])\b/gi)].map((match) =>
+			match[1].toUpperCase() === 'FY' ? 'annual' : 'quarter',
+		),
+	].filter((value) => typeof value === 'string' && value.trim());
+	requireEvidence(periods.length, 'The fundamental result does not identify its fiscal period');
+	assert(
+		periods.every(
+			(value) =>
+				value
+					.trim()
+					.toLowerCase()
+					.replace(/^quarterly$/, 'quarter') === period,
+		),
+		'Expected ' + period + ' fundamentals for ' + symbol,
+	);
+	return true;
+}
+
+function checkSelectedResult(tag, params, result, query) {
 	const url = sourceUrl(result.url);
+	if (tag === 'finance.fundamental' && params.type === 'overview')
+		return checkInternationalFundamental(params, query, result);
 	if (tag === 'finance.calendar' && params.type === 'dividends')
 		return checkDividend(result) && checkedAllParameters(params, ['type']);
 	if (tag === 'ip.global' && params.type === 'GlobalPatent' && params.applicant)
@@ -1090,7 +1134,7 @@ function checkSelectedResult(tag, params, result) {
 	return undefined;
 }
 
-function evaluateResults({ tag, params = {}, max_results }, results, strict) {
+function evaluateResults({ tag, params = {}, max_results, query }, results, strict) {
 	const limit = max_results ?? 10;
 	assert(Array.isArray(results) && results.length > 0, 'Expected a non-empty result set');
 	assert(results.length <= limit, 'More results than max_results');
@@ -1105,7 +1149,7 @@ function evaluateResults({ tag, params = {}, max_results }, results, strict) {
 			'Expected a populated result record',
 		);
 		try {
-			const checked = checkSelectedResult(tag, params, result);
+			const checked = checkSelectedResult(tag, params, result, query);
 			if (checked === undefined && status === 'verified') status = 'nonemptyOnly';
 			if (checked === false) {
 				status = 'unverified';

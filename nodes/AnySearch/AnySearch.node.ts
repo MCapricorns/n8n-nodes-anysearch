@@ -108,6 +108,9 @@ function apiError(
 }
 
 function httpMessage(status: number, body?: IDataObject): string {
+	if (status === 403 && body?.error_code === 'access_temporarily_restricted') {
+		return 'AnySearch access is temporarily restricted. Retry after the restriction expires.';
+	}
 	if (
 		status !== 402 &&
 		typeof body?.message === 'string' &&
@@ -382,6 +385,9 @@ function readDomains(node: INode, value: unknown): string[] {
 	const raw = typeof value === 'string' ? value.split(',') : value;
 	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) {
 		throw new NodeOperationError(node, 'Domain Names or IDs must contain strings');
+	}
+	if (raw.some((entry) => entry.includes(','))) {
+		throw new NodeOperationError(node, 'Each domain name or ID must be a separate array entry');
 	}
 	const domains = raw.map((entry) => entry.trim()).filter(Boolean);
 	if (!domains.length) throw new NodeOperationError(node, 'Domain Names or IDs must not be empty');
