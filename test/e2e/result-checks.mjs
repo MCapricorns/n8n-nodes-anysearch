@@ -17,22 +17,21 @@ const reddit = ['reddit.com'];
 const linkedin = ['linkedin.com'];
 const x = ['x.com', 'twitter.com'];
 const statusPath = /^\/[^/]+\/status\/\d+(?:\/(?:photo|video)\/\d+)?\/?$/i;
+const weiboPost = /^\/(?:(?:detail|status)\/[A-Za-z0-9]+|\d+\/[A-Za-z0-9]+)\/?$/;
+const zhihuPost = /^\/(?:question\/\d+(?:\/answer\/\d+)?|p\/\d+|zvideo\/\d+)\/?$/;
 const socialSources = {
-	weibo: [['weibo.com', 'weibo.cn']],
-	weibo_hot: [
-		['weibo.com', 'weibo.cn'],
-		/^\/(?:top\/summary|hot\/(?:search|weibo)|weibo|p\/index)\/?$/i,
-	],
-	zhihu: [['zhihu.com']],
+	weibo: [['weibo.com', 'weibo.cn'], weiboPost],
+	weibo_hot: [['weibo.com', 'weibo.cn']],
+	zhihu: [['zhihu.com'], zhihuPost],
 	zhihu_hot: [['zhihu.com']],
 	x_top: [x, statusPath],
 	x_latest: [x, statusPath],
 	x_media: [[...x, 'pbs.twimg.com', 'video.twimg.com']],
 	x_people: [
 		x,
-		/^\/(?!(?:home|explore|search|settings|i|notifications|messages|compose|login|logout|signup|tos|privacy|share|intent|hashtag)\/?$)[\w]{1,15}\/?$/i,
+		/^\/(?!(?:home|explore|search|settings|i|notifications|messages|compose|login|logout|signup|tos|terms|privacy|about|help|share|intent|hashtag)\/?$)[\w]{1,15}\/?$/i,
 	],
-	x_lists: [x, /^\/(?:i\/lists\/\d+|[^/]+\/lists\/[^/]+)\/?$/i],
+	x_lists: [x, /^\/(?:i\/lists\/\d+|(?!i\/)\w{1,15}\/lists\/[\w-]+)\/?$/i],
 	reddit_post: [reddit, /^\/(?:r\/[\w]+\/)?comments\/[a-z0-9]+(?:\/[^/]+)?\/?$/i],
 	reddit_community: [reddit, /^\/r\/[\w]+\/?$/i],
 	reddit_comment: [reddit, /^\/(?:r\/[\w]+\/)?comments\/[a-z0-9]+\/[^/]+\/[a-z0-9]+\/?$/i],
@@ -41,7 +40,10 @@ const socialSources = {
 	linkedin_people: [linkedin, /^\/in\/[^/]+\/?$/i],
 	linkedin_jobs: [linkedin, /^\/jobs\/view\/(?:[^/]+-)?\d+\/?$/i],
 	linkedin_company: [linkedin, /^\/company\/[^/]+\/?$/i],
-	linkedin_posts: [linkedin, /^\/(?:posts\/[^/]+|feed\/update\/urn:li:[^/]+)\/?$/i],
+	linkedin_posts: [
+		linkedin,
+		/^\/(?:posts\/[^/]*[-_]activity-\d+(?:-[^/]+)?|feed\/update\/urn:li:(?:activity|share|ugcPost):\d+)\/?$/i,
+	],
 	wechatmp: [['mp.weixin.qq.com'], /^\/s(?:\/[^/]+)?\/?$/],
 };
 
@@ -110,6 +112,8 @@ function doiFromUrl(url) {
 	if (fromHost(url, ['plos.org']) && /\/article(?:\/file)?$/.test(path)) {
 		return url.searchParams.get('id')?.toLowerCase();
 	}
+	if (fromHost(url, ['springer.com']) && path.startsWith('/content/pdf/'))
+		return /^\/content\/pdf\/(10\.\d{4,9}\/.+)\.pdf$/.exec(path)?.[1];
 	if (
 		fromHost(url, [
 			'springer.com',
@@ -241,8 +245,29 @@ function checkLeaderboard(result, url, params) {
 			params.division,
 			'Expected leaderboard division ' + params.division,
 		);
-	if (params.queue && row.queueType)
-		assert.equal(row.queueType, params.queue, 'Unexpected leaderboard queue');
+	if (params.queue) {
+		const namedQueues = { 420: 'RANKED_SOLO_5X5', 440: 'RANKED_FLEX_SR' };
+		const queueInPath = /\/(RANKED_SOLO_5x5|RANKED_FLEX_SR)(?:\/|$)/i.exec(
+			url?.pathname ?? '',
+		)?.[1];
+		const queues = [
+			row.queueType,
+			row.queueId,
+			row.queue,
+			queueInPath,
+			url?.searchParams.get('queue'),
+			url?.searchParams.get('queueType'),
+			url?.searchParams.get('queueId'),
+		].filter((value) => value !== undefined && value !== null && value !== '');
+		assert(queues.length, 'Missing leaderboard queue ' + params.queue);
+		assert(
+			queues.every(
+				(value) =>
+					(namedQueues[value] ?? String(value).toUpperCase()) === params.queue.toUpperCase(),
+			),
+			'Unexpected leaderboard queue',
+		);
+	}
 }
 
 function matchesPlayer(result, url, params) {
@@ -251,11 +276,15 @@ function matchesPlayer(result, url, params) {
 	const matchId = matchIdFromUrl(url);
 	if (matchId) {
 		const record = contentRecord(result.content);
-		const participants = record?.info?.participants;
+		const participants =
+			record?.info?.participants ??
+			(record?.riotIdGameName && record.championName && Number.isFinite(record.kills)
+				? [record]
+				: []);
 		const platform = platforms[region] ?? region.toUpperCase();
 		return (
 			matchId.split('_')[0] === platform &&
-			record?.metadata?.matchId === matchId &&
+			(!record?.metadata?.matchId || record.metadata.matchId === matchId) &&
 			Array.isArray(participants) &&
 			participants.some(
 				(p) =>
@@ -532,6 +561,70 @@ function checkDividend(result) {
 	return dividend && symbols.some((s) => /^[A-Z][A-Z0-9.-]*$/.test(s));
 }
 
+function checkEarnings(result, params) {
+	const record = contentRecord(result.content) ?? {};
+	const title = String(result.title ?? '').trim();
+	const primaryTitle = /^([A-Z0-9][A-Z0-9.-]*)\s+(?:earnings\b|财报披露|业绩日历)/i.exec(title);
+	const header = String(result.content ?? '').split(/\s*\|\s*/);
+	const titleSubject = primaryTitle?.[1] ?? /\(([A-Z][A-Z0-9.-]*)\)\s+earnings\b/i.exec(title)?.[1];
+	const symbols = [
+		result.symbol,
+		result.cn_code,
+		result.ts_code,
+		record.symbol,
+		record.cn_code,
+		record.ts_code,
+		titleSubject,
+		...header.map((s) => /^Symbol:\s*([A-Z0-9.-]+)$/i.exec(s)?.[1]),
+	].filter(Boolean);
+	const date = header.some((s) => /^Date:\s*\d{4}-\d{2}-\d{2}$/i.test(s));
+	const calendar =
+		/\bearnings calendar\b|财报披露|业绩日历/i.test(title) ||
+		(titleSubject && /\bearnings\s*\(\d{4}-\d{2}-\d{2}\)/i.test(title)) ||
+		(date && header.some((s) => /^CalendarSource:\s*market-calendar$/i.test(s))) ||
+		(record.ts_code && record.end_date && (record.actual_date || record.pre_date)) ||
+		(record.symbol &&
+			record.date &&
+			(record.epsEstimated !== undefined || record.eps_estimated !== undefined));
+	assert(calendar, 'Expected an earnings calendar record');
+	const ticker = params.symbol || params.cn_code;
+	if (ticker)
+		assert(
+			symbols.length &&
+				symbols.every((value) => String(value).toUpperCase() === String(ticker).toUpperCase()),
+			'Expected calendar ticker ' + ticker,
+		);
+	return true;
+}
+
+function checkFinancialFlash(result, url, source) {
+	assert(Object.hasOwn(flashSources, source), 'Missing acceptance rule for news_src=' + source);
+	const error = 'Expected a financial flash from ' + source;
+	assert(fromHost(url, flashSources[source]), error);
+	const path = url.pathname;
+	// Publisher home pages, policy pages and section indexes carry no individual news item.
+	const feedItem =
+		/\/(?:livenews|telegraph|flash|brief)\/\d+(?:\.s?html)?\/?$/i.test(path) ||
+		(source === 'sina' &&
+			/\/(?:7x24|zhibo)\/(?:data\/)?[a-z\d-]*\d[a-z\d-]*(?:\.s?html)?$/i.test(path));
+	const article =
+		feedItem ||
+		/\/(?:articles?|news|detail|roll)\/(?:[^/]+\/)*\d+(?:\.s?html)?\/?$/i.test(path) ||
+		/\/(?:doc-[a-z\d]+|a?\d{10,}|c\d{7,})\.s?html$/i.test(path) ||
+		(source === 'fenghuang' && /\/c\/[A-Za-z\d]{7,}\/?$/.test(path));
+	assert(article, error);
+	const record = contentRecord(result.content) ?? {};
+	const kind =
+		result.source_kind ??
+		result.sourceKind ??
+		record.source_kind ??
+		record.sourceKind ??
+		/^SourceKind:\s*([\w-]+)\s*(?:\||$)/i.exec(result.content ?? '')?.[1];
+	if (kind) assert(/^(?:flash(?:[-_]news)?|news[-_]flash)$/i.test(kind), error);
+	// A publisher's ordinary article URL proves its source, but does not establish the flash category.
+	return feedItem || Boolean(kind);
+}
+
 function checkPatentApplicant(result, requested) {
 	const record = contentRecord(result.content) ?? result;
 	const text = String(result.content ?? '');
@@ -596,42 +689,96 @@ function redditMediaPost(url, result) {
 	if (!fromHost(url, reddit) || !socialSources.reddit_post[1].test(url.pathname)) return false;
 	const header = String(result.content ?? '').split('--- Comments ---')[0];
 	if (!/^Subreddit:\s*r\/\w+\s+Author:/i.test(header)) return false;
-	return /\|\s*Comments:\s*\d+\s+(?:Type:\s*IMAGE\s+Domain:\s*i\.redd\.it|Type:\s*VIDEO\s+Domain:\s*v\.redd\.it)(?:\s|\||$)/i.test(
+	return /\|\s*Comments:\s*\d+\s+(?:Type:\s*IMAGE\s+Domain:\s*i\.redd\.it|Type:\s*(?:HOSTED_)?VIDEO\s+Domain:\s*v\.redd\.it)(?:\s|\||$)/i.test(
 		header,
 	);
 }
+
+function matchesMedia(url, result, type) {
+	const path = url.pathname;
+	if (type === 'reddit_media') {
+		if (url.hostname === 'i.redd.it') return /^\/[\w-]+\.(?:jpe?g|png|gif|webp)$/i.test(path);
+		if (url.hostname === 'v.redd.it')
+			return /^\/[a-z0-9]{6,}(?:\/(?:DASH_[^/]+\.mp4|HLSPlaylist\.m3u8))?\/?$/i.test(path);
+		if (/^\/gallery\/[a-z0-9]+\/?$/i.test(path) || redditMediaPost(url, result)) return true;
+		if (!socialSources.reddit_post[1].test(path)) return false;
+	} else {
+		if (url.hostname === 'pbs.twimg.com')
+			return /^\/media\/[\w-]+(?:\.(?:jpe?g|png|gif|webp))?$/i.test(path);
+		if (url.hostname === 'video.twimg.com')
+			return /^\/(?:ext_tw_video|amplify_video|tweet_video)\/.+\.(?:mp4|m3u8)$/i.test(path);
+		if (!statusPath.test(path)) return false;
+		if (/\/(?:photo|video)\/\d+\/?$/i.test(path)) return true;
+	}
+	const media = Array.isArray(result.media) ? result.media : [result.media];
+	return (
+		media.some((item) => /^(?:image|photo|video|animated_gif)$/i.test(item?.type)) ||
+		/^https?:\/\/\S+$/i.test(result.media_url ?? '')
+	);
+}
+
+function matchesHotList(url, result, type) {
+	const isWeibo = type === 'weibo_hot';
+	const path = url.pathname;
+	if (isWeibo && /^\/(?:top\/summary|hot\/(?:search|weibo))\/?$/i.test(path)) return true;
+	if (!isWeibo && /^\/(?:hot|api\/v3\/feed\/topstory\/hot-lists\/total)\/?$/i.test(path))
+		return true;
+	if (isWeibo && /^\/weibo\/?$/i.test(path))
+		return (
+			Boolean(url.searchParams.get('q')) && /^[1-9]\d*$/.test(url.searchParams.get('band_rank'))
+		);
+	if (!(isWeibo ? weiboPost : zhihuPost).test(path)) return false;
+	const row = contentRecord(result.content) ?? result;
+	const rank =
+		row.hot_rank ??
+		row.hotRank ??
+		(row.type === type || row.list_type === 'hot' ? row.rank : undefined);
+	return /^[1-9]\d*$/.test(rank);
+}
+
+function matchesOrcid(result, url, expected) {
+	const record = contentRecord(result.content) ?? {};
+	const status =
+		result.status ?? record.status ?? /^status:\s*([\w-]+)/i.exec(result.content ?? '')?.[1];
+	if (status && /ambiguous|unresolved|not[_ -]found|multiple/i.test(status)) return false;
+	const normalize = (id) =>
+		String(id)
+			.trim()
+			.replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
+			.replace(/\/$/, '')
+			.toUpperCase();
+	const ids = [result.orcid, record.orcid].filter(Boolean).map(normalize);
+	if (fromHost(url, ['orcid.org'])) {
+		const id = /^\/(\d{4}-\d{4}-\d{4}-\d{3}[\dx])\/?$/i.exec(url.pathname)?.[1];
+		if (!id) return false;
+		ids.push(normalize(id));
+	}
+	return ids.length > 0 && ids.every((id) => id === normalize(expected));
+}
+
+const datasetSources = {
+	'cern.zenodo': ['zenodo.org', /^\/records?\/\d+\/?$/i, /^10\.5281\/zenodo\.\d+$/i],
+	'figshare.ars': [
+		'figshare.com',
+		/^\/articles\/(?:[a-z_]+\/)?[^/]+\/\d+(?:\/\d+)?\/?$/i,
+		/^10\.6084\/m9\.figshare\.\d+(?:\.v\d+)?$/i,
+	],
+	'bl.dryad': [
+		'datadryad.org',
+		/^\/(?:stash\/)?dataset\/doi:10\.5061\/dryad\.[\w.-]+\/?$/i,
+		/^10\.5061\/dryad\.[\w.-]+$/i,
+	],
+};
 
 function checkSelectedResult(tag, params, result) {
 	const url = sourceUrl(result.url);
 	if (tag === 'finance.calendar' && params.type === 'dividends') return checkDividend(result);
 	if (tag === 'ip.global' && params.type === 'GlobalPatent' && params.applicant)
 		return checkPatentApplicant(result, params.applicant);
-	if (tag === 'finance.calendar' && params.type === 'earnings') {
-		const text = [result.title, result.snippet, result.content].join(' ');
-		assert(
-			/CalendarSource:|earnings calendar|EPS[_ ]Est|财报披露|业绩日历/i.test(text),
-			'Expected an earnings calendar record',
-		);
-		const ticker = params.symbol || params.cn_code;
-		if (ticker)
-			assert(
-				text
-					.toUpperCase()
-					.split(/[^A-Z0-9.-]+/)
-					.includes(String(ticker).toUpperCase()),
-				'Expected calendar ticker ' + ticker,
-			);
-		return true;
-	}
-	if (tag === 'finance.news' && params.type === 'flash') {
-		const source = params.news_src ?? 'sina';
-		assert(Object.hasOwn(flashSources, source), 'Missing acceptance rule for news_src=' + source);
-		assert(
-			fromHost(url, flashSources[source]) && url.pathname !== '/',
-			'Expected a financial flash from ' + source,
-		);
-		return true;
-	}
+	if (tag === 'finance.calendar' && params.type === 'earnings')
+		return checkEarnings(result, params);
+	if (tag === 'finance.news' && params.type === 'flash')
+		return checkFinancialFlash(result, url, params.news_src ?? 'sina');
 	if (tag === 'social_media.social_media' && params.type) {
 		assert(
 			Object.hasOwn(socialSources, params.type),
@@ -643,21 +790,24 @@ function checkSelectedResult(tag, params, result) {
 			'Expected a ' + params.type + ' result link',
 		);
 		if (params.type === 'reddit_media' || params.type === 'x_media') {
-			const hasMedia =
-				fromHost(url, ['i.redd.it', 'v.redd.it', 'pbs.twimg.com', 'video.twimg.com']) ||
-				/\/gallery\/\w+|\/(?:photo|video)\/\d+\/?$/.test(url.pathname) ||
-				(params.type === 'reddit_media' && redditMediaPost(url, result)) ||
-				Boolean(result.media || result.media_url);
-			assert(hasMedia, 'Expected evidence of media for ' + params.type);
+			assert(
+				matchesMedia(url, result, params.type),
+				'Expected evidence of media for ' + params.type,
+			);
 		}
-		if (params.type === 'wechatmp' && url.pathname === '/s') {
+		if (params.type === 'wechatmp' && /^\/s\/?$/.test(url.pathname)) {
 			assert(
 				url.searchParams.get('__biz') && url.searchParams.get('mid'),
 				'Expected a WeChat article ID',
 			);
 		}
-		if (params.type === 'weibo_hot' && url.pathname === '/weibo')
-			assert(url.searchParams.get('q'), 'Expected a Weibo hot topic');
+		if (params.type === 'weibo_hot' || params.type === 'zhihu_hot')
+			assert(
+				matchesHotList(url, result, params.type),
+				'Expected a ' + params.type + ' hot-list record',
+			);
+		// A status permalink alone cannot distinguish X Top from Latest.
+		if (params.type === 'x_top' || params.type === 'x_latest') return false;
 		return true;
 	}
 	if (tag === 'legal.legislation' && params.jurisdiction === 'US' && params.collection) {
@@ -675,7 +825,9 @@ function checkSelectedResult(tag, params, result) {
 				);
 		}
 		if (params.collection === 'CFR' && params.title) {
-			const title = /(?:title-|cfr\/text\/|CFR-\d{4}-title)(\d+)/i.exec(url.pathname)?.[1];
+			const title = /(?:title-|cfr\/text\/|link\/cfr\/|CFR-\d{4}-title)(\d+)/i.exec(
+				url.pathname,
+			)?.[1];
 			if (title) assert.equal(title, String(params.title), 'Unexpected CFR title');
 		}
 		return true;
@@ -717,26 +869,45 @@ function checkSelectedResult(tag, params, result) {
 		}
 	}
 	if (tag === 'academic.person' && params.orcid) {
-		assert(
-			(fromHost(url, ['orcid.org']) && url.pathname === '/' + params.orcid) ||
-				result.orcid === params.orcid,
-			'Expected author ORCID ' + params.orcid,
-		);
+		assert(matchesOrcid(result, url, params.orcid), 'Expected author ORCID ' + params.orcid);
 		return true;
 	}
 	if (tag === 'academic.dataset' && params.client_id) {
-		const sources = {
-			'cern.zenodo': ['zenodo.org', '10.5281/zenodo.'],
-			'figshare.ars': ['figshare.com', '10.6084/m9.figshare.'],
-			'bl.dryad': ['datadryad.org', '10.5061/dryad.'],
-		};
-		const source = sources[params.client_id];
+		const source = datasetSources[params.client_id];
 		assert(source, 'Missing dataset source rule for ' + params.client_id);
 		assert(
-			(fromHost(url, [source[0]]) && url.pathname !== '/') ||
-				(fromHost(url, ['doi.org']) && url.pathname.toLowerCase().startsWith('/' + source[1])),
+			(fromHost(url, [source[0]]) && source[1].test(decodeURIComponent(url.pathname))) ||
+				(fromHost(url, ['doi.org']) && source[2].test(decodeURIComponent(url.pathname).slice(1))),
 			'Expected dataset repository ' + params.client_id,
 		);
+		if (params.resource_type) {
+			const row = contentRecord(result.content) ?? result;
+			const figshareType =
+				fromHost(url, ['figshare.com']) &&
+				/^\/articles\/([a-z_]+)\/[^/]+\/\d+(?:\/\d+)?\/?$/i.exec(url.pathname)?.[1];
+			const types = [
+				row.resource_type,
+				row.resourceTypeGeneral,
+				row.types?.resourceTypeGeneral,
+				figshareType,
+			].filter(Boolean);
+			if (types.length) {
+				assert(
+					types.every(
+						(value) => String(value).toLowerCase() === params.resource_type.toLowerCase(),
+					),
+					'Unexpected dataset resource type',
+				);
+			} else {
+				return (
+					params.resource_type.toLowerCase() === 'dataset' &&
+					(params.client_id === 'bl.dryad' ||
+						/^(?:the|this)\s+dataset\s+(?:contains|includes|provides|comprises|consists)\b/i.test(
+							String(result.snippet ?? '').trim(),
+						))
+				);
+			}
+		}
 		return true;
 	}
 	if (tag === 'gaming.esports' && params.type === 'match_detail') {
@@ -755,21 +926,41 @@ function checkSelectedResult(tag, params, result) {
 			matchesPlayer(result, url, params),
 			'Expected a profile or match record for ' + params.game_name,
 		);
-		if (params.type === 'mastery' && params.champion) {
-			const text = [result.title, result.snippet, result.content].join(' ').toLowerCase();
-			assert(
-				text.includes(params.champion.toLowerCase()),
-				'Expected mastery for champion ' + params.champion,
+		const record = contentRecord(result.content) ?? result;
+		if (params.type === 'ranked')
+			return typeof record.tier === 'string' && Number.isFinite(record.leaguePoints);
+		if (params.type === 'live_game')
+			return Boolean(
+				record.gameId &&
+				record.gameStartTime &&
+				Array.isArray(record.participants) &&
+				record.participants.length,
 			);
+		if (params.type === 'mastery') {
+			const champion =
+				typeof record.championName === 'string' && Number.isFinite(record.championPoints)
+					? record.championName.toLowerCase()
+					: undefined;
+			const entries = [result.snippet, result.content].flatMap((text) =>
+				[...String(text ?? '').matchAll(/(?:^|;)\s*([^,;]+),\s*\d+,\s*[\d,]+\s+pts\b/gi)].map(
+					(row) => row[1].trim().toLowerCase(),
+				),
+			);
+			if (params.champion)
+				assert(
+					[champion, ...entries].includes(params.champion.toLowerCase()),
+					'Expected mastery for champion ' + params.champion,
+				);
+			return Boolean(champion || entries.length);
 		}
 		return true;
 	}
 	return false;
 }
 
-export function checkSearchResults({ tag, params = {}, max_results = 10 }, results) {
+export function checkSearchResults({ tag, params = {}, max_results }, results) {
 	assert(Array.isArray(results) && results.length > 0, 'Expected a non-empty result set');
-	assert(results.length <= max_results, 'More results than max_results');
+	assert(results.length <= (max_results ?? 10), 'More results than max_results');
 	let semantic = true;
 	for (const result of results) {
 		assert(
@@ -782,5 +973,11 @@ export function checkSearchResults({ tag, params = {}, max_results = 10 }, resul
 		if (!checkSelectedResult(tag, params, result)) semantic = false;
 	}
 	const ordered = tag === 'academic.paper' && checkPaperOrder(params.sort, results);
+	if (
+		tag === 'academic.paper' &&
+		max_results >= 2 &&
+		['cited', 'date_asc', 'date_desc'].includes(params.sort)
+	)
+		return ordered;
 	return semantic || ordered;
 }

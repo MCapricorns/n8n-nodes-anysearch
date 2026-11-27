@@ -642,7 +642,7 @@
       "publication_type": "preprint",
       "sort": "date_desc"
     },
-    "max_results": 1
+    "max_results": 3
   },
   {
     "query": "transformer neural network",
@@ -654,7 +654,7 @@
       "publication_type": "journal_article",
       "sort": "cited"
     },
-    "max_results": 1
+    "max_results": 3
   },
   {
     "query": "diabetes",
@@ -663,7 +663,7 @@
       "year": "2017",
       "sort": "date_asc"
     },
-    "max_results": 1
+    "max_results": 3
   },
   {
     "query": "diabetes",

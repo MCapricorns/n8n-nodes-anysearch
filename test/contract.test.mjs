@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { addCapabilityChecks, checkCapabilityRequests } from './e2e/capability-checks.mjs';
 import { catalogCoverage } from './e2e/catalog-checks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -104,6 +105,44 @@ async function runCase(configured) {
 		};
 	}
 }
+
+test('specialized acceptance binds HTTP IDs to the originating single node and batch position', async () => {
+	const plan = [];
+	addCapabilityChecks((name, parameters) => plan.push({ name, parameters }), null);
+	const requests = [];
+	const nodes = [];
+	for (const { name, parameters } of plan) {
+		const run = await runCase({
+			parameters,
+			continueOnFail: true,
+			response({ body }) {
+				const request_id = 'specialized-' + requests.length;
+				const missingRequired = [
+					'Flight number missing',
+					'Flight ticket parameters missing',
+				].includes(body.query);
+				requests.push({ body, request_id, status: missingRequired ? 400 : 200 });
+				return { ...success, request_id };
+			},
+		});
+		nodes.push({
+			name,
+			results: run.output[0].map(({ json }) => ({
+				request_id: json.request_id ?? json.details?.request_id,
+				query_index: json.query_index ?? json.details?.query_index,
+			})),
+		});
+	}
+	checkCapabilityRequests(requests, nodes);
+	const first = nodes[0].results[0];
+	const second = nodes[1].results[0];
+	[first.request_id, second.request_id] = [second.request_id, first.request_id];
+	assert.throws(() => checkCapabilityRequests(requests, nodes), /AAPL: Request ID differs/);
+	[first.request_id, second.request_id] = [second.request_id, first.request_id];
+	const batch = nodes.find(({ name }) => name === 'Capability batch 1').results;
+	[batch[0].request_id, batch[1].request_id] = [batch[1].request_id, batch[0].request_id];
+	assert.throws(() => checkCapabilityRequests(requests, nodes), /Hide on Bush: Request ID differs/);
+});
 
 test('search maps query and max_results and returns one item per result', async () => {
 	const r = await runCase({});

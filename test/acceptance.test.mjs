@@ -71,6 +71,10 @@ test('only matching, non-empty output joined to the actual request can pass cata
 		/duplicate output request ID/,
 	);
 	assert.throws(() => checkMatrix(records, [], domains), /HTTP request/);
+	assert.throws(
+		() => checkMatrix(records, [...requests, ...requests], domains),
+		/Multiple HTTP requests/,
+	);
 	records[0].output.results = [{ ...jobResult, url: 'https://www.youtube.com/watch?v=123' }];
 	assert.throws(() => checkMatrix(records, requests, domains), /linkedin_jobs/);
 });
@@ -170,7 +174,7 @@ test('each financial flash source must supply its own result link', () => {
 });
 
 const socialLinks = {
-	weibo: 'weibo.com/abc/123',
+	weibo: 'm.weibo.cn/detail/5369820149450193',
 	weibo_hot: 's.weibo.com/top/summary',
 	zhihu: 'zhihu.com/question/123',
 	zhihu_hot: 'zhihu.com/hot',
@@ -483,19 +487,39 @@ test('leaderboard entries carry rank, division and the requested server', () => 
 			queue: 'RANKED_SOLO_5x5',
 		},
 	};
-	const row = { puuid: 'player123', leaguePoints: 97, rank: 'I', wins: 8, losses: 3 };
+	const row = {
+		puuid: 'player123',
+		leaguePoints: 97,
+		rank: 'I',
+		wins: 8,
+		losses: 3,
+		queueType: 'RANKED_SOLO_5x5',
+	};
 	const entry = {
 		title: '#1 player123 — GOLD 97LP',
 		url: 'https://www.op.gg/summoners/kr/by-puuid/player123',
 		content: JSON.stringify(row),
 	};
 	assert.equal(checkSearchResults(input, [entry]), true);
+	const withoutQueue = { ...row };
+	delete withoutQueue.queueType;
+	assert.throws(
+		() => checkSearchResults(input, [{ ...entry, content: JSON.stringify(withoutQueue) }]),
+		/Missing leaderboard queue/,
+	);
+	assert.equal(
+		checkSearchResults(input, [
+			{ ...entry, url: entry.url + '?queue=420', content: JSON.stringify(withoutQueue) },
+		]),
+		true,
+	);
 	for (const invalid of [
 		{ ...entry, url: 'https://example.org/unrelated' },
 		{ ...entry, url: entry.url.replace('/kr/', '/na/') },
 		{ ...entry, title: '#1 player123 — BRONZE 97LP' },
 		{ ...entry, content: JSON.stringify({ ...row, rank: 'IV' }) },
 		{ ...entry, content: JSON.stringify({ ...row, queueType: 'RANKED_FLEX_SR' }) },
+		{ ...entry, url: entry.url + '?queue=440' },
 		{ ...entry, content: '' },
 	])
 		assert.throws(() => checkSearchResults(input, [invalid]), /leaderboard|ranked player/);
@@ -661,4 +685,235 @@ test('a Reddit media post can identify its image or video in the provider metada
 		{ ...image, url: 'https://www.reddit.com/r/PythonLearning/' },
 	])
 		assert.throws(() => checkSearchResults(input, [wrong]), /media/);
+});
+
+test('hot lists require the list itself or ranking data for the linked post', () => {
+	const hot = (type, row) =>
+		checkSearchResults({ tag: 'social_media.social_media', params: { type } }, [row]);
+	const answer = {
+		url: 'https://www.zhihu.com/question/20009081/answer/2108614520633612236',
+		snippet: '作者: Soulflare',
+		content: '普通回答提到热榜第一名',
+	};
+	assert.equal(hot('zhihu', answer), true);
+	assert.throws(() => hot('zhihu_hot', answer), /hot-list/);
+	assert.equal(hot('zhihu_hot', { ...answer, content: '{"type":"zhihu_hot","rank":2}' }), true);
+	assert.equal(hot('zhihu_hot', { url: 'https://www.zhihu.com/hot' }), true);
+	assert.throws(() => hot('zhihu_hot', { ...answer, hot_rank: 0 }), /hot-list/);
+	for (const type of ['zhihu', 'zhihu_hot', 'weibo', 'weibo_hot']) {
+		const host = type.startsWith('zhihu') ? 'zhihu.com' : 'weibo.com';
+		assert.throws(
+			() => hot(type, { url: 'https://' + host + '/terms', hot_rank: 1 }),
+			new RegExp(type),
+		);
+	}
+	assert.throws(() => hot('weibo_hot', { url: 'https://s.weibo.com/weibo?q=Python' }), /hot-list/);
+	assert.equal(hot('weibo_hot', { url: 'https://s.weibo.com/weibo?q=Python&band_rank=3' }), true);
+	for (const type of ['x_latest', 'x_top'])
+		assert.equal(hot(type, { url: 'https://x.com/python/status/123' }), false);
+	for (const [type, url, extra] of [
+		['wechatmp', 'https://mp.weixin.qq.com/s/', {}],
+		['x_lists', 'https://x.com/i/lists/privacy', {}],
+		['linkedin_posts', 'https://www.linkedin.com/posts/privacy', {}],
+		['x_media', 'https://x.com/settings', { media_url: 'https://pbs.twimg.com/media/image' }],
+		['reddit_media', 'https://www.reddit.com/settings/', { media: [] }],
+	])
+		assert.throws(() => hot(type, { url, ...extra }), /Expected/);
+});
+
+test('financial publishers identify individual flash items and exclude legal and navigation pages', () => {
+	const check = (news_src, row) =>
+		checkSearchResults({ tag: 'finance.news', params: { type: 'flash', news_src } }, [row]);
+	const bulletin = {
+		title: '央行公布最新利率',
+		content: 'SourceKind: flash-news | 央行公布最新利率',
+	};
+	for (const [source, host] of Object.entries(financeSources)) {
+		const item = { url: 'https://' + host + '/news/123', ...bulletin };
+		assert.equal(check(source, item), true);
+		assert.equal(check(source, { url: item.url, title: 'Publisher article' }), false);
+		assert.throws(
+			() => check(source, { ...item, content: 'SourceKind: general-news | See flash news' }),
+			/financial flash/,
+		);
+		for (const path of ['/privacy.html', '/terms', '/news/', '/news/index.html', '/about']) {
+			assert.throws(
+				() => check(source, { ...bulletin, url: 'https://' + host + path }),
+				/financial flash/,
+			);
+		}
+	}
+	assert.equal(check('wallstreetcn', { url: 'https://wallstreetcn.com/livenews/2981234' }), true);
+	assert.equal(check('yicai', { url: 'https://www.yicai.com/brief/102311234.html' }), true);
+	assert.equal(
+		check('sina', {
+			url: 'https://finance.sina.com.cn/roll/2026-11-27/doc-inexample123.shtml',
+			...bulletin,
+		}),
+		true,
+	);
+});
+
+test('earnings record identifiers must agree across the calendar header, JSON and title', () => {
+	const us = { tag: 'finance.calendar', params: { type: 'earnings', symbol: 'AAPL' } };
+	const valid = {
+		title: 'AAPL Earnings (2027-02-04)',
+		url: 'https://site.financialmodelingprep.com/?ref=calendar-earnings-AAPL',
+		content:
+			'Symbol: AAPL | Date: 2027-02-04 | EPS_Actual: N/A | EPS_Estimated: 2.9400 | CalendarSource: market-calendar | MarketWide: false',
+	};
+	assert.equal(checkSearchResults(us, [valid]), true);
+	for (const row of [
+		{ title: 'MSFT earnings calendar', content: 'Symbol: MSFT | Date: 2027-01-26 | See also AAPL' },
+		{ ...valid, symbol: 'MSFT' },
+		{ ...valid, title: 'MSFT Earnings (2027-02-04)' },
+		{ ...valid, content: valid.content.replace('Symbol: AAPL', 'Symbol: MSFT') },
+		{ title: 'Calendar', content: 'Earnings calendar; See also AAPL' },
+	])
+		assert.throws(() => checkSearchResults(us, [row]), /calendar/);
+	const cn = { tag: us.tag, params: { type: 'earnings', cn_code: '600519.SH' } };
+	const local = {
+		title: '600519.SH 财报披露（20260930）已披露',
+		url: '',
+		content: '{"ts_code":"600519.SH","end_date":"20260930","actual_date":"20261031"}',
+	};
+	assert.equal(checkSearchResults(cn, [local]), true);
+	for (const params of [cn.params, { ...cn.params, symbol: '' }]) {
+		assert.throws(
+			() =>
+				checkSearchResults({ tag: cn.tag, params }, [
+					{ ...local, content: local.content.replace('600519.SH', '301199.SZ') },
+				]),
+			/calendar ticker/,
+		);
+	}
+});
+
+test('ORCID resolution rejects conflicting identity fields and ambiguous candidate lists', () => {
+	const orcid = '0000-0002-1825-0097';
+	const other = '0000-0003-0530-4305';
+	const input = { tag: 'academic.person', params: { orcid } };
+	const valid = {
+		title: 'Example Person',
+		url: 'https://openalex.org/A5012345678',
+		content: JSON.stringify({
+			id: 'https://openalex.org/A5012345678',
+			display_name: 'Example Person',
+			orcid: 'https://orcid.org/' + orcid,
+		}),
+	};
+	assert.equal(checkSearchResults(input, [valid]), true);
+	for (const row of [
+		{ url: 'https://orcid.org/' + other, orcid },
+		{ url: 'https://orcid.org/' + orcid, orcid: other },
+		{ ...valid, orcid: other },
+		{ url: 'https://orcid.org/login', orcid },
+		{
+			url: '',
+			orcid,
+			title: 'Ambiguous author identity in OpenAlex',
+			content: 'status: AMBIGUOUS_IDENTITY orcid: ' + orcid + ' reason: multiple author profiles',
+		},
+	])
+		assert.throws(() => checkSearchResults(input, [row]), /ORCID/);
+	const doi = '10.1007/s43442-021-0078-9';
+	assert.equal(
+		checkSearchResults({ tag: 'academic.paper', params: { doi } }, [
+			{ url: 'https://link.springer.com/content/pdf/' + doi + '.pdf', doi },
+		]),
+		true,
+	);
+});
+
+test('a dataset repository identifies a record rather than a policy, account or search page', () => {
+	for (const [client_id, host, path] of [
+		['cern.zenodo', 'zenodo.org', '/record/8279574'],
+		['figshare.ars', 'figshare.com', '/articles/dataset/ghg-emissions_csv/14903061/1'],
+		['bl.dryad', 'datadryad.org', '/stash/dataset/doi:10.5061/dryad.123ab'],
+	]) {
+		const input = { tag: 'academic.dataset', params: { client_id, resource_type: 'Dataset' } };
+		assert.equal(
+			checkSearchResults(input, [{ url: 'https://' + host + path, resource_type: 'Dataset' }]),
+			true,
+		);
+		for (const wrong of ['/login', '/terms', '/search?q=Dataset', '/about']) {
+			assert.throws(
+				() =>
+					checkSearchResults(input, [{ url: 'https://' + host + wrong, resource_type: 'Dataset' }]),
+				/dataset repository/,
+			);
+		}
+		if (client_id === 'figshare.ars')
+			assert.throws(
+				() =>
+					checkSearchResults(input, [
+						{ url: 'https://' + host + path.replace('/dataset/', '/figure/') },
+					]),
+				/resource type/,
+			);
+	}
+	const cfr = {
+		tag: 'legal.legislation',
+		params: { jurisdiction: 'US', collection: 'CFR', title: '42' },
+	};
+	assert.equal(
+		checkSearchResults(cfr, [{ url: 'https://www.govinfo.gov/link/cfr/42/5.100' }]),
+		true,
+	);
+	assert.throws(
+		() => checkSearchResults(cfr, [{ url: 'https://www.govinfo.gov/link/cfr/24/5.100' }]),
+		/CFR title/,
+	);
+});
+
+test('a requested paper ordering needs comparable distinct results even when record metadata matches a filter', () => {
+	const paper = (citations) => ({
+		title: 'An article',
+		type: 'article',
+		cited_by_count: citations,
+	});
+	const input = {
+		tag: 'academic.paper',
+		params: { publication_type: 'journal_article', sort: 'cited' },
+		max_results: 3,
+	};
+	assert.equal(checkSearchResults(input, [paper(5)]), false);
+	assert.equal(checkSearchResults(input, [paper(5), paper(5)]), false);
+	assert.equal(checkSearchResults(input, [paper(7), paper(5)]), true);
+	assert.throws(() => checkSearchResults(input, [paper(5), paper(7)]), /paper order/);
+	const dates = { ...input, params: { year: '2017', sort: 'date_asc' } };
+	const row = { title: 'Study', publication_year: 2017 };
+	assert.equal(checkSearchResults(dates, [row, row]), false);
+	assert.equal(
+		checkSearchResults(dates, [
+			{ ...row, publication_date: '2017-02-12' },
+			{ ...row, publication_date: '2017-06-12' },
+		]),
+		true,
+	);
+});
+
+test('ranked, live game and champion mastery need evidence of the named operation', () => {
+	const url = 'https://www.op.gg/lol/summoners/kr/Hide%20on%20bush-KR1';
+	const input = (type, extra) => ({
+		tag: 'gaming.esports',
+		params: { type, region: 'kr', game_name: 'Hide on Bush#KR1', ...extra },
+	});
+	for (const type of ['ranked', 'live_game'])
+		assert.equal(checkSearchResults(input(type), [{ url, title: 'Player profile' }]), false);
+	assert.equal(
+		checkSearchResults(input('ranked'), [{ url, content: '{"tier":"GOLD","leaguePoints":97}' }]),
+		true,
+	);
+	const mastery = input('mastery', { champion: 'Yasuo' });
+	assert.equal(
+		checkSearchResults(mastery, [
+			{ url, snippet: 'Mastery Table ; Taliyah, 24, 236,743 pts ; Yasuo, 23, 225,480 pts' },
+		]),
+		true,
+	);
+	assert.throws(
+		() => checkSearchResults(mastery, [{ url, content: 'Follow my Yasuo fan account' }]),
+		/mastery/,
+	);
 });

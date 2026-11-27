@@ -132,90 +132,113 @@ function checkItem(entry, item) {
 	if (entry.result) assert.match(item.results[0].title, entry.result);
 }
 
+const groups = cases
+	.slice(0, 4)
+	.map((entry) => ({ name: entry.query, entries: [entry], single: true }));
+for (let start = 4; start < cases.length; start += 5) {
+	groups.push({
+		name: 'Capability batch ' + (1 + (start - 4) / 5),
+		entries: cases.slice(start, start + 5),
+		single: false,
+	});
+}
+
 export function addCapabilityChecks(add, credential) {
-	for (const entry of cases.slice(0, 4)) {
-		add(
-			entry.query,
-			{
-				resource: 'search',
-				operation: 'search',
-				query: entry.query,
-				options: {
-					tag: entry.tag,
-					params: JSON.stringify(entry.params),
-					maxResults: 1,
-					simplify: false,
-				},
-			},
-			credential,
-			(items) => {
-				assert.equal(items.length, 1);
-				checkItem(entry, items[0].json);
-			},
-		);
-	}
-	for (let start = 4; start < cases.length; start += 5) {
-		const batch = cases.slice(start, start + 5);
-		add(
-			'Capability batch ' + (1 + (start - 4) / 5),
-			{
-				resource: 'search',
-				operation: 'batchSearch',
-				queries: JSON.stringify(
-					batch.map(({ query, tag, params }) => ({ query, tag, params, max_results: 1 })),
-				),
-			},
-			credential,
-			(items) => {
-				assert.equal(items.length, batch.length);
-				const failures = [];
-				for (const [i, item] of items.entries()) {
-					try {
-						assert.equal(item.json.query_index ?? item.json.details?.query_index, i);
-						checkItem(batch[i], item.json);
-					} catch (error) {
-						failures.push(
-							batch[i].query +
-								' (' +
-								(item.json.request_id ?? item.json.details?.request_id ?? 'local') +
-								'): ' +
-								error.message,
-						);
-					}
+	for (const { name, entries, single } of groups) {
+		const [first] = entries;
+		const parameters = single
+			? {
+					resource: 'search',
+					operation: 'search',
+					query: first.query,
+					options: {
+						tag: first.tag,
+						params: JSON.stringify(first.params),
+						maxResults: 1,
+						simplify: false,
+					},
 				}
-				assert.equal(failures.length, 0, failures.join('\n'));
-			},
-		);
+			: {
+					resource: 'search',
+					operation: 'batchSearch',
+					queries: JSON.stringify(
+						entries.map(({ query, tag, params }) => ({ query, tag, params, max_results: 1 })),
+					),
+				};
+		add(name, parameters, credential, (items) => {
+			assert.equal(items.length, entries.length);
+			const failures = [];
+			for (const [i, { json }] of items.entries()) {
+				try {
+					if (!single) assert.equal(json.query_index ?? json.details?.query_index, i);
+					checkItem(entries[i], json);
+				} catch (error) {
+					failures.push(
+						entries[i].query +
+							' (' +
+							(json.request_id ?? json.details?.request_id ?? 'local') +
+							'): ' +
+							error.message,
+					);
+				}
+			}
+			assert.equal(failures.length, 0, failures.join('\n'));
+		});
 	}
 }
 
 export function checkCapabilityRequests(requests, tests) {
-	const returnedIds = new Set(
-		tests.flatMap((test) => (test.results ?? []).map((item) => item.request_id)),
-	);
+	const byNode = new Map(tests.map((test) => [test.name, test.results]));
+	const seenIds = new Set();
 	const failures = [];
-	for (const entry of cases) {
-		try {
-			const sent = requests.filter(
-				(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
-			);
-			if (entry.missing && !entry.status) {
-				assert.equal(sent.length, 0, entry.query);
-				continue;
+	for (const { name, entries, single } of groups) {
+		const results = byNode.get(name);
+		for (const [index, entry] of entries.entries()) {
+			try {
+				const item = results?.[index];
+				assert(item, 'Missing node output');
+				if (!single) assert.equal(item.query_index, index, 'Unexpected batch index');
+				const sent = requests.filter(
+					(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
+				);
+				if (entry.missing && !entry.status) {
+					assert.equal(sent.length, 0, 'Locally invalid parameters reached HTTP');
+					assert.equal(item.request_id, undefined, 'Local failure has a request ID');
+					continue;
+				}
+				assert.equal(sent.length, 1, 'Expected exactly one HTTP request');
+				const [request] = sent;
+				assert(
+					request.request_id && !seenIds.has(request.request_id),
+					'Missing or duplicate HTTP request ID',
+				);
+				seenIds.add(request.request_id);
+				assert.equal(
+					item.request_id,
+					request.request_id,
+					'Request ID differs from this node output',
+				);
+				assert.deepEqual(request.body, {
+					query: entry.query,
+					tag: entry.tag,
+					params: entry.sent ?? entry.params,
+					max_results: 1,
+				});
+				assert.equal(request.status, entry.status ?? 200, entry.query);
+			} catch (error) {
+				failures.push(entry.query + ': ' + error.message);
 			}
-			assert.equal(sent.length, 1, entry.query);
-			assert.equal(sent[0].status, entry.status ?? 200, entry.query);
-			assert(sent[0].request_id && returnedIds.has(sent[0].request_id), entry.query);
-			assert.deepEqual(sent[0].body.params, entry.sent ?? entry.params);
-		} catch (error) {
-			failures.push(entry.query + ': ' + error.message);
 		}
 	}
 	assert.equal(failures.length, 0, failures.join('\n'));
 }
 
 export function catalogRequestReport(records, requests, domains) {
-	const byId = new Map(requests.filter((r) => r.request_id).map((r) => [r.request_id, r]));
+	const byId = new Map();
+	for (const request of requests) {
+		const id = request.request_id;
+		if (id) byId.set(id, byId.has(id) ? null : request);
+	}
 	const seen = new Set();
 	const bodies = [];
 	const failures = [];
@@ -230,6 +253,7 @@ export function catalogRequestReport(records, requests, domains) {
 			);
 			seen.add(id);
 			const sent = byId.get(id);
+			assert.notEqual(sent, null, 'Multiple HTTP requests share the output request ID');
 			assert(sent, 'Expected a captured HTTP request');
 			const expected = expectedParams === undefined ? input : { ...input, params: expectedParams };
 			assert.deepEqual(
