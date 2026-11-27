@@ -1,0 +1,36 @@
+# Removes already published versions from npm with the repository token. Start it by hand.
+name: Unpublish
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: Space-separated versions to remove
+        required: true
+
+jobs:
+  unpublish:
+    name: Unpublish from npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Remove the versions
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSIONS: ${{ inputs.versions }}
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          latest=$(npm view n8n-nodes-anysearch dist-tags.latest)
+          failed=0
+          for version in $VERSIONS; do
+            if [ "$version" = "$latest" ]; then
+              echo "::error::$version is the latest release and stays"
+              exit 1
+            fi
+            npm unpublish "n8n-nodes-anysearch@$version" || failed=1
+          done
+          npm view n8n-nodes-anysearch versions
+          exit $failed
