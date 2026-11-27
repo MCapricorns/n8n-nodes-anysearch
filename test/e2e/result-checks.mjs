@@ -959,8 +959,9 @@ function checkSelectedResult(tag, params, result) {
 }
 
 export function checkSearchResults({ tag, params = {}, max_results }, results) {
+	const limit = max_results ?? 10;
 	assert(Array.isArray(results) && results.length > 0, 'Expected a non-empty result set');
-	assert(results.length <= (max_results ?? 10), 'More results than max_results');
+	assert(results.length <= limit, 'More results than max_results');
 	let semantic = true;
 	for (const result of results) {
 		assert(
@@ -975,7 +976,7 @@ export function checkSearchResults({ tag, params = {}, max_results }, results) {
 	const ordered = tag === 'academic.paper' && checkPaperOrder(params.sort, results);
 	if (
 		tag === 'academic.paper' &&
-		max_results >= 2 &&
+		limit >= 2 &&
 		['cited', 'date_asc', 'date_desc'].includes(params.sort)
 	)
 		return ordered;

@@ -570,7 +570,7 @@ test('paper filters use publication metadata from the record, outside the abstra
 			() => checkSearchResults({ ...input, params: { [field]: value } }, [paper]),
 			pattern,
 		);
-	const singleYear = { tag: input.tag, params: { year: '2017', sort: 'date_asc' } };
+	const singleYear = { tag: input.tag, params: { year: '2017', sort: 'date_asc' }, max_results: 1 };
 	assert.throws(
 		() =>
 			checkSearchResults(singleYear, [
@@ -878,6 +878,7 @@ test('a requested paper ordering needs comparable distinct results even when rec
 		max_results: 3,
 	};
 	assert.equal(checkSearchResults(input, [paper(5)]), false);
+	assert.equal(checkSearchResults({ tag: input.tag, params: input.params }, [paper(5)]), false);
 	assert.equal(checkSearchResults(input, [paper(5), paper(5)]), false);
 	assert.equal(checkSearchResults(input, [paper(7), paper(5)]), true);
 	assert.throws(() => checkSearchResults(input, [paper(5), paper(7)]), /paper order/);
