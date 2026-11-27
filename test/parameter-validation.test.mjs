@@ -116,6 +116,43 @@ test('explicit identifier standards and submission limits drive validation', () 
 	assertFieldError('security.vuln', 'value', { type: 'cve', value: tooMany }, tooMany);
 });
 
+test('academic citation identifiers and CFR title numbers follow published standards', () => {
+	for (const [id_type, id] of [
+		['isbn', '9781402096327'],
+		['isbn', '0-306-40615-2'],
+		['isbn', '0-8044-2957-X'],
+		['issn', '0138-9130'],
+		['issn', '0378-5955'],
+		['omid', 'br/06101801781'],
+		['omid', 'ra/06250110138'],
+		['omid', 'br/060/1'],
+	]) {
+		const params = { id_type, id };
+		assert.deepEqual(capabilityParameters(node, 'academic.citation', params, id), params);
+	}
+	for (const [id_type, id] of [
+		['isbn', '9781402096328'],
+		['isbn', '0-306-40615-3'],
+		['isbn', '4006381333931'],
+		['isbn', '9790060115615'],
+		['issn', '0138-9131'],
+		['omid', 'fake/1/2'],
+		['omid', 'br/060/1/2'],
+	]) {
+		assertFieldError('academic.citation', 'id', { id_type, id }, id);
+	}
+	const tag = 'legal.legislation';
+	for (const title of [1, '50']) {
+		const params = { jurisdiction: 'US', collection: 'CFR', title };
+		assert.deepEqual(capabilityParameters(node, tag, params, 'CFR'), params);
+	}
+	for (const title of [0, 51, ' 51 ', '-1']) {
+		assertFieldError(tag, 'title', { jurisdiction: 'US', collection: 'CFR', title }, 'CFR');
+	}
+	const params = { jurisdiction: 'US', collection: 'USCODE', title: 51 };
+	assert.deepEqual(capabilityParameters(node, tag, params, 'US code'), params);
+});
+
 test('documented defaults add or replace the fields needed in outbound requests', () => {
 	for (const [tag, query, params, expected] of [
 		[

@@ -873,6 +873,7 @@ for (const continueOnFail of [false, true]) {
 }
 
 test('both search operations apply shared capability validation and compatibility defaults', async () => {
+	const dnsNameAtLimit = ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(61)].join('.');
 	const examples = [
 		['travel.flight_status', { flight_number: 'CA981' }, { departure: '' }],
 		['finance.fundamental', { type: 'overview' }, { symbol: '', cn_code: '' }],
@@ -951,6 +952,9 @@ test('both search operations apply shared capability validation and compatibilit
 		['security.intel', { ioc: Buffer.alloc(48, 255).toString('base64url') }, {}],
 		['security.scan', { ioc: 'https://data_node.example.com/a' }, {}],
 		['security.scan', { ioc: '例子。测试' }, {}],
+		['security.scan', { ioc: dnsNameAtLimit + '.' }, {}],
+		['security.scan', { ioc: dnsNameAtLimit + 'd' }, /\bioc\b/],
+		['security.intel', { ioc: dnsNameAtLimit + 'd' }, /\bioc\b/],
 		[
 			'travel.flight',
 			{ departure: 'PEK', arrival: 'SFO', date: '01/03/2028', return_date: '2028-02-29' },

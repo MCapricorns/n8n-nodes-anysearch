@@ -46,7 +46,9 @@ function isNetworkIndicator(value: string): boolean {
 		if (isIPv6Candidate) return hostname.startsWith('[');
 		if (hasScheme)
 			return hostname.startsWith('[') || (/[a-z\d]/i.test(hostname) && !/[,;]/.test(hostname));
-		return dnsName.test(hostname) && !isIPv4(hostname);
+		// The DNS length includes a byte for each label length and one for the root.
+		const bareHostname = hostname.replace(/\.$/, '');
+		return bareHostname.length <= 253 && dnsName.test(hostname) && !isIPv4(hostname);
 	} catch {
 		return false;
 	}

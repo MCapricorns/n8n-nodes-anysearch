@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.8 (2026-11-27)
+
+- Validate ISBN prefixes, ISBN and ISSN check digits, and OMID entity codes and formats in citation lookups.
+- Enforce the 1–50 range for numeric title filters when the CFR collection is selected.
+- Enforce the DNS length limit for bare domain indicators after IDNA conversion.
+
 ## 1.1.7 (2026-11-27)
 
 - Require a Batch Search query list and validate each REST request object before sending it. Omit empty tag parameters and reject unsupported region and response format values.

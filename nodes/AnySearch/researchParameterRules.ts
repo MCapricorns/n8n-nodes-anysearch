@@ -68,13 +68,36 @@ function validOrcid(value: unknown): boolean {
 	return digits[15] === (checkDigit === 10 ? 'X' : String(checkDigit));
 }
 
+// ISSNs and legacy ISBN-10 numbers use descending weights with a modulo 11 check.
+function hasModulo11Checksum(digits: string): boolean {
+	let sum = 0;
+	for (let index = 0; index < digits.length; index++) {
+		const digit = digits[index].toUpperCase();
+		sum += (digit === 'X' ? 10 : Number(digit)) * (digits.length - index);
+	}
+	return sum % 11 === 0;
+}
+
+function validIsbn(id: string): boolean {
+	const digits = id.replace(/[ -]/g, '');
+	if (/^\d{9}[\dX]$/i.test(digits)) return hasModulo11Checksum(digits);
+	// The 979-0 registration group is reserved for ISMNs.
+	if (!/^(?:978\d|979[1-9])\d{9}$/.test(digits)) return false;
+	let sum = 0;
+	for (let index = 0; index < digits.length; index++) {
+		sum += Number(digits[index]) * (index % 2 === 0 ? 1 : 3);
+	}
+	return sum % 10 === 0;
+}
+
 const identifierTypes = new Map<string, (id: string) => boolean>([
 	['doi', (id) => doi.matches(id, {})],
 	['pmid', (id) => /^\d+$/.test(id)],
-	['issn', (id) => /^\d{4}-?\d{3}[\dX]$/i.test(id)],
-	['isbn', (id) => /^(?:\d{9}[\dX]|\d{13})$/i.test(id.replace(/[ -]/g, ''))],
+	['issn', (id) => /^\d{4}-?\d{3}[\dX]$/i.test(id) && hasModulo11Checksum(id.replace('-', ''))],
+	['isbn', validIsbn],
 	['orcid', validOrcid],
-	['omid', (id) => /^[a-z][a-z\d]*\/\d+(?:\/\d+)*$/i.test(id)],
+	// OpenCitations Meta assigns IDs to these five entity types.
+	['omid', (id) => /^(?:br|ra|ar|re|id)\/\d+(?:\/\d+)?$/i.test(id)],
 ]);
 
 function validCitationId(value: unknown, params: IDataObject): boolean {
@@ -285,11 +308,18 @@ export const researchParameterRules: CapabilityRuleMap = {
 			),
 			resource_kind: choice('rules', 'resources', 'all'),
 			title: {
-				matches: (value, params) =>
-					typeof value === 'string'
+				matches(value, params) {
+					const text = typeof value === 'string';
+					const numeric = typeof value === 'number' || (text && /^[+-]?\d+$/.test(value.trim()));
+					if (params.collection === 'CFR' && numeric) {
+						const number = Number(value);
+						return Number.isInteger(number) && number >= 1 && number <= 50;
+					}
+					return text
 						? value.trim() !== ''
-						: typeof value === 'number' && positiveInteger.matches(value, params),
-				expected: 'non-empty text or an integer CFR title number',
+						: typeof value === 'number' && positiveInteger.matches(value, params);
+				},
+				expected: 'non-empty text or an integer title number (1 to 50 for CFR)',
 			},
 		},
 		check: (params) => checkRange(params, 'effective_from', 'effective_to'),
