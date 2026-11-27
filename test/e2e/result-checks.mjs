@@ -227,6 +227,27 @@ function matchesGame(result, url, id) {
 	return linkId === id || (record?.metadata?.matchId === id && participants !== undefined);
 }
 
+function checkRankedQueue(result, row, url, expected, label = 'ranked') {
+	const namedQueues = { 420: 'RANKED_SOLO_5X5', 440: 'RANKED_FLEX_SR' };
+	const queueInPath = /\/(RANKED_SOLO_5x5|RANKED_FLEX_SR)(?:\/|$)/i.exec(url?.pathname ?? '')?.[1];
+	const queues = [
+		...[result, row].flatMap((source) => [source.queueType, source.queueId, source.queue]),
+		queueInPath,
+		url?.searchParams.get('queue'),
+		url?.searchParams.get('queueType'),
+		url?.searchParams.get('queueId'),
+	].filter((value) => value !== undefined && value !== null && value !== '');
+	requireEvidence(queues.length, 'Missing ' + label + ' queue ' + expected);
+	assert(
+		queues.every(
+			(value) =>
+				(typeof value === 'string' || typeof value === 'number') &&
+				(namedQueues[value] ?? String(value).toUpperCase()) === expected.toUpperCase(),
+		),
+		'Unexpected ' + label + ' queue',
+	);
+}
+
 function checkLeaderboard(result, url, params) {
 	const row = contentRecord(result.content) ?? result;
 	// The live service links an individual leaderboard entry to the player's OP.GG profile.
@@ -266,30 +287,7 @@ function checkLeaderboard(result, url, params) {
 			'Expected leaderboard division ' + params.division,
 		);
 	}
-	if (params.queue) {
-		const namedQueues = { 420: 'RANKED_SOLO_5X5', 440: 'RANKED_FLEX_SR' };
-		const queueInPath = /\/(RANKED_SOLO_5x5|RANKED_FLEX_SR)(?:\/|$)/i.exec(
-			url?.pathname ?? '',
-		)?.[1];
-		const queues = [
-			row.queueType,
-			row.queueId,
-			row.queue,
-			queueInPath,
-			url?.searchParams.get('queue'),
-			url?.searchParams.get('queueType'),
-			url?.searchParams.get('queueId'),
-		].filter((value) => value !== undefined && value !== null && value !== '');
-		requireEvidence(queues.length, 'Missing leaderboard queue ' + params.queue);
-		assert(
-			queues.every(
-				(value) =>
-					(typeof value === 'string' || typeof value === 'number') &&
-					(namedQueues[value] ?? String(value).toUpperCase()) === params.queue.toUpperCase(),
-			),
-			'Unexpected leaderboard queue',
-		);
-	}
+	if (params.queue) checkRankedQueue(result, row, url, params.queue, 'leaderboard');
 }
 
 function matchesPlayer(result, url, params) {
@@ -405,14 +403,16 @@ function matchesCanadianRegulation(url) {
 }
 
 function paperDetails(result, url) {
-	const record = { ...result, ...contentRecord(result.content) };
+	const structured = contentRecord(result.content) ?? {};
+	const record = { ...result, ...structured };
 	const snippet = (result.snippet ?? '').replace(/\s*\[Open Access\]\s*$/i, '');
 	// AnySearch can return a compact bibliographic line instead of a JSON record.
 	const citation =
 		/^(.*?)\s+\((\d{4})\)\s+[—–-]\s+(.*?)(?:\s+[—–-]\s+cited\s+([\d,]+)\s+times?)?$/i.exec(
 			snippet.trim(),
 		);
-	const metadata = { ...paperHeader(result.snippet), ...paperHeader(result.content) };
+	const headers = [paperHeader(result.snippet), paperHeader(result.content)];
+	const metadata = { ...headers[0], ...headers[1] };
 	const authors =
 		record.authors ??
 		record.authorships?.map((row) => row.author?.display_name) ??
@@ -425,10 +425,20 @@ function paperDetails(result, url) {
 			)
 		: String(authors ?? '').split(/[,;]/);
 	const date = record.publication_date ?? record.publicationDate ?? metadata['publication date'];
-	const years = [record.publication_year, record.year, metadata['publication year'], citation?.[2]]
-		.filter((v) => /^\d{4}$/.test(v))
+	const years = [
+		...[result, structured].flatMap((source) => [
+			source.publication_year,
+			source.year,
+			...[source.publication_date, source.publicationDate].map(publicationDateYear),
+		]),
+		...headers.flatMap((header) => [
+			header['publication year'],
+			publicationDateYear(header['publication date']),
+		]),
+		citation?.[2],
+	]
+		.filter((v) => (typeof v === 'number' || typeof v === 'string') && /^\d{4}$/.test(v))
 		.map(Number);
-	if (!years.length && /^\d{4}/.test(date)) years.push(Number(date.slice(0, 4)));
 	const count =
 		record.cited_by_count ??
 		record.citationCount ??
@@ -452,7 +462,9 @@ function paperDetails(result, url) {
 			metadata.venue ??
 			metadata.journal ??
 			citation?.[3],
-		language: record.language ?? metadata.language,
+		languages: [result.language, structured.language, ...headers.map((header) => header.language)]
+			.filter((value) => typeof value === 'string' && value.trim())
+			.map((value) => value.trim().toLowerCase()),
 		citations: /^[\d,]+$/.test(count) ? Number(String(count).replaceAll(',', '')) : undefined,
 		openAccess: access,
 		type:
@@ -464,6 +476,10 @@ function paperDetails(result, url) {
 				? 'preprint'
 				: undefined),
 	};
+}
+
+function publicationDateYear(value) {
+	return typeof value === 'string' ? /^(\d{4})(?:-|$)/.exec(value)?.[1] : undefined;
 }
 
 function checkPaper(result, url, params) {
@@ -491,12 +507,15 @@ function checkPaper(result, url, params) {
 		);
 		missing.delete('year');
 	}
-	if (params.language && typeof paper.language === 'string') {
-		const observed = paper.language.toLowerCase();
+	if (params.language && paper.languages.length) {
 		const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(params.language);
 		assert(
-			observed.split('-')[0] === params.language.toLowerCase() || observed === name.toLowerCase(),
-			'Unexpected paper language ' + observed,
+			paper.languages.every(
+				(observed) =>
+					observed.split('-')[0] === params.language.toLowerCase() ||
+					observed === name?.toLowerCase(),
+			),
+			'Unexpected paper language ' + [...new Set(paper.languages)].join(', '),
 		);
 		missing.delete('language');
 	}
@@ -558,19 +577,30 @@ function checkPaper(result, url, params) {
 function checkPaperOrder(sort, results) {
 	if (results.length < 2 || !['cited', 'date_asc', 'date_desc'].includes(sort)) return false;
 	const papers = results.map((result) => paperDetails(result, sourceUrl(result.url)));
-	let values;
-	if (sort === 'cited') values = papers.map((paper) => paper.citations);
-	else if (papers.every((paper) => /^\d{4}-\d{2}-\d{2}$/.test(paper.date)))
-		values = papers.map((paper) => paper.date);
-	else values = papers.map((paper) => paper.years[0]);
-	if (values.some((value) => value === undefined)) return false;
-	for (let i = 1; i < values.length; i++) {
-		assert(
-			sort === 'date_asc' ? values[i - 1] <= values[i] : values[i - 1] >= values[i],
-			'Unexpected paper order for sort=' + sort,
-		);
+	const values = papers.map((paper) => {
+		if (sort === 'cited') return paper.citations;
+		if (new Set(paper.years).size > 1) return undefined;
+		if (typeof paper.date === 'string' && /^\d{4}(?:-\d{2}){0,2}$/.test(paper.date))
+			return paper.date;
+		return paper.years.length ? String(paper.years[0]) : undefined;
+	});
+	const observed = values.filter((value) => value !== undefined);
+	let distinct = false;
+	let sufficient = observed.length === values.length;
+	for (const [index, earlier] of observed.entries()) {
+		for (const later of observed.slice(index + 1)) {
+			const precision = Math.min(String(earlier).length, String(later).length);
+			const left = typeof earlier === 'string' ? earlier.slice(0, precision) : earlier;
+			const right = typeof later === 'string' ? later.slice(0, precision) : later;
+			assert(
+				sort === 'date_asc' ? left <= right : left >= right,
+				'Unexpected paper order for sort=' + sort,
+			);
+			distinct ||= left !== right;
+			if (left === right && sort !== 'cited' && precision < 10) sufficient = false;
+		}
 	}
-	return new Set(values).size > 1;
+	return sufficient && distinct;
 }
 
 function checkDividend(result) {
@@ -770,19 +800,24 @@ function matchesHotList(url, result, type) {
 
 function matchesOrcid(result, url, expected) {
 	const record = contentRecord(result.content) ?? {};
-	const status =
-		result.status ?? record.status ?? /^status:\s*([\w-]+)/i.exec(result.content ?? '')?.[1];
-	requireEvidence(
-		!(status && /ambiguous|unresolved|not[_ -]found|multiple/i.test(status)),
-		'ORCID resolution returned ' + status + ' without selecting an author',
+	const status = [
+		result.status,
+		record.status,
+		/^status:\s*([\w-]+)/i.exec(result.content ?? '')?.[1],
+	].find(
+		(value) =>
+			typeof value === 'string' && /ambiguous|unresolved|not[_ -]found|multiple/i.test(value),
 	);
+	requireEvidence(!status, 'ORCID resolution returned ' + status + ' without selecting an author');
 	const normalize = (id) =>
-		String(id)
+		id
 			.trim()
 			.replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
 			.replace(/\/$/, '')
 			.toUpperCase();
-	const ids = [result.orcid, record.orcid].filter(Boolean).map(normalize);
+	const ids = [result.orcid, record.orcid]
+		.filter((id) => typeof id === 'string' && id.trim())
+		.map(normalize);
 	if (fromHost(url, ['orcid.org'])) {
 		const id = /^\/(\d{4}-\d{4}-\d{4}-\d{3}[\dx])\/?$/i.exec(url.pathname)?.[1];
 		if (!id) return false;
@@ -865,19 +900,19 @@ function checkSelectedResult(tag, params, result) {
 			const congress = /\/bill\/(\d+)[a-z]+-congress\/|\/BILLS-(\d+)[a-z]/i.exec(url.pathname);
 			if (congress) {
 				assert.equal(
-					congress[1] ?? congress[2],
-					String(params.congress),
+					BigInt(congress[1] ?? congress[2]),
+					BigInt(params.congress),
 					'Unexpected US Congress session',
 				);
 				checked.push('congress');
 			}
 		}
-		if (params.collection === 'CFR' && /^\d+$/.test(String(params.title))) {
+		if (params.collection === 'CFR' && /^[+-]?\d+$/.test(String(params.title).trim())) {
 			const title = /(?:title-|cfr\/text\/|link\/cfr\/|CFR-\d{4}-title)(\d+)/i.exec(
 				url.pathname,
 			)?.[1];
 			if (title) {
-				assert.equal(title, String(params.title), 'Unexpected CFR title');
+				assert.equal(BigInt(title), BigInt(params.title), 'Unexpected CFR title');
 				checked.push('title');
 			}
 		}
@@ -1008,6 +1043,8 @@ function checkSelectedResult(tag, params, result) {
 			'Expected a profile or match record for ' + params.game_name,
 		);
 		const record = contentRecord(result.content) ?? result;
+		if (params.queue && (params.type === 'player' || params.type === 'ranked'))
+			checkRankedQueue(result, record, url, params.queue);
 		if (params.type === 'ranked')
 			return typeof record.tier === 'string' && Number.isFinite(record.leaguePoints);
 		if (params.type === 'live_game')

@@ -187,16 +187,18 @@ export function checkCapabilityRequests(requests, tests) {
 				const item = results?.[index];
 				assert(item, 'Missing node output');
 				if (!single) assert.equal(item.query_index, index, 'Unexpected batch index');
-				const sent = requests.filter(
-					(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
-				);
+				const sameQuery = requests.filter((r) => r.body?.query === entry.query);
 				if (entry.invalidFields) {
-					assert.equal(sent.length, 0, 'Invalid parameters reached the HTTP API');
+					assert.equal(sameQuery.length, 0, 'Invalid parameters reached the HTTP API');
 					assert.equal(item.request_id, undefined, 'Local validation has an HTTP request ID');
+					assert.equal(item.http_status, undefined, 'Local validation has an HTTP status');
 					continue;
 				}
+				const sent = sameQuery.filter((r) => r.body.tag === entry.tag);
 				assert.equal(sent.length, 1, 'Expected exactly one HTTP request');
 				const [request] = sent;
+				assert.equal(request.method, 'POST', 'Unexpected search HTTP method');
+				assert.equal(request.path, '/v1/search', 'Unexpected search HTTP path');
 				assert(
 					request.request_id && !seenIds.has(request.request_id),
 					'Missing or duplicate HTTP request ID',
@@ -253,6 +255,8 @@ export function catalogRequestReport(records, requests, domains) {
 			const sent = byId.get(id);
 			assert.notEqual(sent, null, 'Multiple HTTP requests share the output request ID');
 			assert(sent, 'Expected a captured HTTP request');
+			assert.equal(sent.method, 'POST', 'Unexpected search HTTP method');
+			assert.equal(sent.path, '/v1/search', 'Unexpected search HTTP path');
 			const expected = expectedParams === undefined ? input : { ...input, params: expectedParams };
 			assert(
 				isDeepStrictEqual(sent.body, expected),

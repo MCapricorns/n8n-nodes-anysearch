@@ -20,6 +20,7 @@ const REQUEST_TIMEOUT = 60_000;
 const EXTRACT_BODY_LIMIT = 16 * 1024;
 const REDDIT_ORIGIN = 'https://www.reddit.com';
 const CAPABILITY_TAG_PATTERN = /^[^.\s]+\.[^.\s]+$/;
+
 const sanitizedErrors = new WeakSet<Error>();
 const publicErrorMessages = new Set([
 	'At least one domain parameter is required.',
@@ -505,21 +506,60 @@ async function batchSearchOperation(
 	);
 }
 
+function isNonPublicIPv6(host: string): boolean {
+	if (host === '[::]' || host === '[::1]') return true;
+
+	// URL normalizes the literal, but may leave a run of zero hextets compressed.
+	const [prefix, suffix] = host.slice(1, -1).split('::');
+	const words = (text: string) =>
+		text
+			.split(':')
+			.filter(Boolean)
+			.map((word) => parseInt(word, 16));
+	const leading = words(prefix);
+	const trailing = suffix === undefined ? [] : words(suffix);
+	const [first, second, third, fourth] = [
+		...leading,
+		...Array<number>(8 - leading.length - trailing.length).fill(0),
+		...trailing,
+	];
+
+	// The IANA protocol assignment has more specific entries with different reachability.
+	if (first === 0x2001 && second < 0x200) {
+		return !(
+			second === 0 ||
+			second === 3 ||
+			(second === 4 && third === 0x112) ||
+			(second >= 0x20 && second <= 0x3f) ||
+			/^\[2001:1::[123]\]$/.test(host)
+		);
+	}
+	return (
+		(first === 0x64 && second === 0xff9b && third === 1) ||
+		(first === 0x100 && second === 0 && third === 0 && fourth <= 1) ||
+		(first === 0x2001 && second === 0xdb8) ||
+		(first === 0x3fff && second < 0x1000) ||
+		first === 0x5f00 ||
+		(first >= 0xfc00 && first <= 0xfdff) ||
+		(first >= 0xfe80 && first <= 0xfebf) ||
+		first >= 0xff00
+	);
+}
+
 function isNonPublicHost(hostname: string): boolean {
 	const host = hostname.toLowerCase().replace(/\.$/, '');
 	if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
-	if (
-		/^\[(?:::|::1)\]$/.test(host) ||
-		/^\[(?:f[cd][\da-f]{2}|fe[89ab][\da-f]|ff[\da-f]{2}):/.test(host)
-	) {
-		return true;
-	}
-	const mapped = /^\[::ffff:([\da-f]{1,4}):[\da-f]{1,4}\]$/.exec(host);
-	const ipv4 = /^([\d]{1,3})\.([\d]{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
-	if (!mapped && !ipv4) return false;
-	const pair = mapped ? Number.parseInt(mapped[1], 16) : 0;
-	const first = ipv4 ? Number(ipv4[1]) : pair >>> 8;
-	const second = ipv4 ? Number(ipv4[2]) : pair & 255;
+	const mapped = /^\[::ffff:([\da-f]{1,4}):([\da-f]{1,4})\]$/.exec(host);
+	const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+	if (!mapped && !ipv4) return host.startsWith('[') && isNonPublicIPv6(host);
+
+	const high = mapped ? parseInt(mapped[1], 16) : 0;
+	const low = mapped ? parseInt(mapped[2], 16) : 0;
+	const [first, second, third, fourth] = ipv4
+		? ipv4.slice(1).map(Number)
+		: [high >>> 8, high & 255, low >>> 8, low & 255];
+
+	// Reject IANA special-purpose addresses marked as non-global, plus multicast.
 	return (
 		first === 0 ||
 		first === 10 ||
@@ -528,7 +568,13 @@ function isNonPublicHost(hostname: string): boolean {
 		(first === 100 && second >= 64 && second <= 127) ||
 		(first === 169 && second === 254) ||
 		(first === 172 && second >= 16 && second <= 31) ||
-		(first === 192 && second === 168)
+		(first === 192 && second === 168) ||
+		(first === 192 && second === 0 && third === 0 && fourth !== 9 && fourth !== 10) ||
+		(first === 192 && second === 0 && third === 2) ||
+		(first === 192 && second === 88 && third === 99 && fourth === 2) ||
+		(first === 198 && (second === 18 || second === 19)) ||
+		(first === 198 && second === 51 && third === 100) ||
+		(first === 203 && second === 0 && third === 113)
 	);
 }
 

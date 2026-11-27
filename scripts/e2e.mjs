@@ -72,10 +72,10 @@ function invoke(args, extraEnv = {}, timeoutMs = 300000) {
 		child.stdio[3]?.setEncoding('utf8').on('data', (chunk) => {
 			trace += chunk;
 		});
-		child.stdout.on('data', (data) => {
+		child.stdout.setEncoding('utf8').on('data', (data) => {
 			stdout += data;
 		});
-		child.stderr.on('data', (data) => {
+		child.stderr.setEncoding('utf8').on('data', (data) => {
 			stderr += data;
 		});
 		const timer = setTimeout(() => {

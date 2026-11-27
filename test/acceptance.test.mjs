@@ -36,6 +36,8 @@ function matrix(inputs, outputs) {
 	}));
 	const requests = records.map(({ input, output }) => ({
 		body: input,
+		method: 'POST',
+		path: '/v1/search',
 		request_id: output.request_id,
 		status: 200,
 		code: 0,
@@ -74,6 +76,10 @@ test('only matching, non-empty output joined to the actual request can pass cata
 		/duplicate output request ID/,
 	);
 	assert.throws(() => checkMatrix(records, [], domains), /HTTP request/);
+	assert.throws(
+		() => checkMatrix(records, [{ ...requests[0], path: '/v1/extract' }], domains),
+		/Unexpected search HTTP path/,
+	);
 	assert.throws(
 		() => checkMatrix(records, [...requests, ...requests], domains),
 		/Multiple HTTP requests/,
@@ -565,6 +571,20 @@ test('paper filters use publication metadata from the record, outside the abstra
 			'OpenAlex ID: W2626778328 DOI: https://doi.org/10.48550/arxiv.1706.03762 Authors: Ashish Vaswani, Noam Shazeer Type: conference-paper Venue: neural information processing systems Publication date: 2017-06-12 Publication year: 2017 Citation count: 127362 Open access: true Language: en Abstract: See an article from 2025. Publication year: 2025.',
 	};
 	assert.equal(checkSearchResults(input, [paper]), true);
+	const conflicting = {
+		title: 'An article',
+		publication_year: 2015,
+		language: 'fr',
+		content: '{"publication_year":2020,"language":"English"}',
+	};
+	for (const [field, value, pattern] of [
+		['year', '2020', /publication year/],
+		['language', 'en', /language/],
+	])
+		assert.throws(
+			() => checkSearchResults({ tag: input.tag, params: { [field]: value } }, [conflicting]),
+			pattern,
+		);
 	for (const [field, value, pattern] of [
 		['year', '2019', /publication year/],
 		['year', '2022-', /publication year/],
@@ -818,6 +838,12 @@ test('ORCID resolution rejects conflicting identity fields and ambiguous candida
 		{ url: 'https://orcid.org/' + orcid, orcid: other },
 		{ ...valid, orcid: other },
 		{ url: 'https://orcid.org/login', orcid },
+		{ ...valid, orcid: [orcid], content: undefined },
+		{
+			...valid,
+			status: 'RESOLVED',
+			content: JSON.stringify({ orcid, status: 'AMBIGUOUS_IDENTITY' }),
+		},
 		{
 			url: '',
 			orcid,
@@ -874,6 +900,21 @@ test('a dataset repository identifies a record rather than a policy, account or 
 		() => checkSearchResults(cfr, [{ url: 'https://www.govinfo.gov/link/cfr/24/5.100' }]),
 		/CFR title/,
 	);
+	for (const title of ['042', '+42']) {
+		assert.equal(
+			checkSearchResults({ ...cfr, params: { ...cfr.params, title } }, [
+				{ url: 'https://www.govinfo.gov/link/cfr/42/5.100' },
+			]),
+			true,
+		);
+	}
+	assert.equal(
+		checkSearchResults(
+			{ ...cfr, params: { jurisdiction: 'US', collection: 'BILLS', congress: '0119' } },
+			[{ url: 'https://www.congress.gov/bill/119th-congress/house-bill/11102' }],
+		),
+		true,
+	);
 });
 
 test('a requested paper ordering needs comparable distinct results even when record metadata matches a filter', () => {
@@ -902,6 +943,15 @@ test('a requested paper ordering needs comparable distinct results even when rec
 		]),
 		true,
 	);
+	assert.throws(
+		() =>
+			checkSearchResults({ ...dates, params: { sort: 'date_asc' } }, [
+				{ ...row, publication_date: '2017-06-12' },
+				{ ...row, publication_date: '2017-02-12' },
+				{ ...row, publication_year: 2018 },
+			]),
+		/paper order/,
+	);
 });
 
 test('ranked, live game and champion mastery need evidence of the named operation', () => {
@@ -915,6 +965,14 @@ test('ranked, live game and champion mastery need evidence of the named operatio
 	assert.equal(
 		checkSearchResults(input('ranked'), [{ url, content: '{"tier":"GOLD","leaguePoints":97}' }]),
 		true,
+	);
+	const solo = input('ranked', { queue: 'RANKED_SOLO_5x5' });
+	const player = { url, tier: 'GOLD', leaguePoints: 97 };
+	assert.equal(assessSearchResults(solo, [player]).status, 'unverified');
+	assert.equal(checkSearchResults(solo, [{ ...player, queueId: 420 }]), true);
+	assert.throws(
+		() => checkSearchResults(solo, [{ ...player, queueType: 'RANKED_FLEX_SR' }]),
+		/Unexpected ranked queue/,
 	);
 	const mastery = input('mastery', { champion: 'Yasuo' });
 	for (const [filter, championName] of [

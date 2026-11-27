@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.9 (2026-11-27)
+
+- Reject additional non-public IPv4 and IPv6 addresses in Extract before sending a request. Keep globally reachable exceptions available.
+- Preserve Unicode when reading n8n CLI output and verify the HTTP method and path in acceptance tests.
+- Improve acceptance checks for paper metadata and sorting, ORCID resolution, ranked queues, and numeric U.S. legislation filters.
+
 ## 1.1.8 (2026-11-27)
 
 - Validate ISBN prefixes, ISBN and ISSN check digits, and OMID entity codes and formats in citation lookups.

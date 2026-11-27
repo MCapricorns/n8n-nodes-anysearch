@@ -123,9 +123,16 @@ test('specialized acceptance binds HTTP IDs to the originating single node and b
 		const run = await runCase({
 			parameters,
 			continueOnFail: true,
-			response({ body }) {
+			response({ body, method, url }) {
 				const request_id = 'specialized-' + requests.length;
-				requests.push({ body, request_id, status: 200, code: 0 });
+				requests.push({
+					body,
+					method,
+					path: new URL(url).pathname,
+					request_id,
+					status: 200,
+					code: 0,
+				});
 				return { ...success, request_id };
 			},
 		});
@@ -140,6 +147,11 @@ test('specialized acceptance binds HTTP IDs to the originating single node and b
 		});
 	}
 	checkCapabilityRequests(requests, nodes);
+	assert.throws(
+		() =>
+			checkCapabilityRequests([...requests, { body: { query: 'Flight number missing' } }], nodes),
+		/Invalid parameters reached the HTTP API/,
+	);
 	const first = nodes[0].results[0];
 	const second = nodes[1].results[0];
 	[first.request_id, second.request_id] = [second.request_id, first.request_id];
@@ -405,12 +417,27 @@ test('extract trims valid URLs and rejects malformed or unsupported URLs before 
 		'https://example com',
 		'https://127.0.0.1',
 		'http://[::1]',
+		'https://192.0.2.10/',
+		'https://198.18.0.1/',
+		'https://198.51.100.10/',
+		'https://203.0.113.10/',
+		'https://[::ffff:192.0.2.10]/',
+		'https://[2001:db8::1]/',
+		'https://[3fff::1]/',
 		42,
 	]) {
 		const rejected = await runCase({ parameters: { ...parameters, url } });
 		assert.equal(rejected.outcome, 'error');
 		assert.match(rejected.message, /URL/i);
 		assert.equal(rejected.requests.length, 0);
+	}
+	for (const url of ['https://8.8.8.8/', 'https://192.0.0.9/', 'https://[2001:1::1]/']) {
+		const allowed = await runCase({
+			parameters: { ...parameters, url },
+			response: { code: 0, data: { url, title: 'Public fixture', content: 'Body' } },
+		});
+		assert.equal(allowed.outcome, 'returned');
+		assert.deepEqual(allowed.requests[0].body, { url });
 	}
 });
 
