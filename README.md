@@ -20,7 +20,8 @@ The node also uses the live `GET /v1/domains` endpoint to populate the domain pi
 credentials. [AnySearch REST reference](https://www.anysearch.com/docs/api-endpoints)
 
 AnySearch uses a single n8n node version. Search and Batch Search use the same validated
-parameter definitions from the reviewed capability catalog. Workflows created from the temporary
+parameter definitions from the catalog bundled with this release. CI compares those definitions
+with live discovery. Workflows created from the temporary
 version 2 on GitHub can set the AnySearch node's `typeVersion` to `1` to edit it in n8n.
 
 | REST endpoint | Required | Optional |

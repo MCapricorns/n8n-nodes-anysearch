@@ -88,6 +88,7 @@ test('documented scalar constraints reject malformed values across capability gr
 		['academic.paper', 'year', '2019-2018'],
 		['academic.person', 'orcid', '0000-0002-1825-0098'],
 		['legal.judicial', 'judgment_date', '2023-02-29'],
+		['security.intel', 'ioc', 'not an indicator at all'],
 		['travel.flight', 'cabin_class', 'UnknownClass'],
 		['travel.flight_status', 'departure', 'JFKK'],
 	]) {
@@ -97,6 +98,20 @@ test('documented scalar constraints reject malformed values across capability gr
 		assert(sample, `${tag}.${field} must have a positive fixture`);
 		assertFieldError(tag, field, { ...sample.params, [field]: value }, sample.query);
 	}
+});
+
+test('explicit identifier standards and submission limits drive validation', () => {
+	for (const [tag, params] of [
+		['academic.paper', { doi: '10.1234/Research data', language: 'he' }],
+		['legal.enforcement', { currency: 'XCG' }],
+	]) {
+		assert.deepEqual(capabilityParameters(node, tag, params, 'test'), params);
+	}
+	assertFieldError('academic.paper', 'language', { language: 'iw' }, 'test');
+	assertFieldError('academic.paper', 'doi', { doi: '10.1234/Research\tdata' }, 'test');
+	assertFieldError('legal.enforcement', 'currency', { currency: 'CNH' }, 'test');
+	const tooMany = Array(6).fill('CVE-2021-44228').join(',');
+	assertFieldError('security.vuln', 'value', { type: 'cve', value: tooMany }, tooMany);
 });
 
 test('documented defaults add or replace the fields needed in outbound requests', () => {

@@ -2,31 +2,63 @@ import type { IDataObject } from 'n8n-workflow';
 import type { CapabilityRuleMap, FieldRule } from './parameterRules';
 import { booleanValue, choice, commaSeparated, dateValue, format, integer } from './parameterRules';
 
-const doi = format(/^10\.\d+(?:\.\d+)*\/\S+$/, 'a DOI such as 10.1038/s41586-021-03819-2');
+// DOI Foundation handbook §4.3.1 includes Unicode spacing characters in DOI names.
+const doi = format(
+	/^10\.\d+(?:\.\d+)*\/[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]+$/u,
+	'a DOI such as 10.1038/s41586-021-03819-2',
+);
 const textList = commaSeparated(format(/\S/, 'non-empty text'));
-const languageNames = new Intl.DisplayNames('en', { type: 'language', fallback: 'none' });
-const currencyNames = new Intl.DisplayNames('en', { type: 'currency', fallback: 'none' });
+// https://id.loc.gov/vocabulary/iso639-1.json
+const languageCodes = new Set(
+	`aa ab ae af ak am an ar as av ay az ba be bg bi bm bn bo br bs ca ce ch co cr cs cu cv
+	cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho
+	hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku
+	kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn
+	no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm
+	sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi
+	vo wa wo xh yi yo za zh zu`.split(/\s+/),
+);
+// SIX ISO 4217 lists one (2026-09-17) and three (2026-01-01).
+// https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html
+const currencyCodes = new Set(
+	`ADP AED AFA AFN ALK ALL AMD ANG AOA AOK AON AOR ARA ARP ARS ARY ATS AUD AWG AYM AZM AZN
+	BAD BAM BBD BDT BEC BEF BEL BGJ BGK BGL BGN BHD BIF BMD BND BOB BOP BOV BRB BRC BRE BRL
+	BRN BRR BSD BTN BUK BWP BYB BYN BYR BZD CAD CDF CHC CHE CHF CHW CLF CLP CNY COP COU CRC
+	CSD CSJ CSK CUC CUP CVE CYP CZK DDM DEM DJF DKK DOP DZD ECS ECV EEK EGP ERN ESA ESB ESP
+	ETB EUR FIM FJD FKP FRF GBP GEK GEL GHC GHP GHS GIP GMD GNE GNF GNS GQE GRD GTQ GWE GWP
+	GYD HKD HNL HRD HRK HTG HUF IDR IEP ILP ILR ILS INR IQD IRR ISJ ISK ITL JMD JOD JPY KES
+	KGS KHR KMF KPW KRW KWD KYD KZT LAJ LAK LBP LKR LRD LSL LSM LTL LTT LUC LUF LUL LVL LVR
+	LYD MAD MDL MGA MGF MKD MLF MMK MNT MOP MRO MRU MTL MTP MUR MVQ MVR MWK MXN MXP MXV MYR
+	MZE MZM MZN NAD NGN NIC NIO NLG NOK NPR NZD OMR PAB PEH PEI PEN PES PGK PHP PKR PLN PLZ
+	PTE PYG QAR RHD ROK ROL RON RSD RUB RUR RWF SAR SBD SCR SDD SDG SDP SEK SGD SHP SIT SKK
+	SLE SLL SOS SRD SRG SSP STD STN SUR SVC SYP SZL THB TJR TJS TMM TMT TND TOP TPE TRL TRY
+	TTD TWD TZS UAH UAK UGS UGW UGX USD USN USS UYI UYN UYP UYU UYW UZS VEB VED VEF VES VNC
+	VND VUV WST XAD XAF XAG XAU XBA XBB XBC XBD XCD XCG XDR XEU XFO XFU XOF XPD XPF XPT XRE
+	XSU XTS XUA XXX YDD YER YUD YUM YUN ZAL ZAR ZMK ZMW ZRN ZRZ ZWC ZWD ZWG ZWL ZWN ZWR`.split(/\s+/),
+);
 const language: FieldRule = {
 	matches: (value) =>
-		typeof value === 'string' && /^[a-z]{2}$/i.test(value) && languageNames.of(value) !== undefined,
+		typeof value === 'string' &&
+		/^[a-zA-Z]{2}$/.test(value) &&
+		languageCodes.has(value.toLowerCase()),
 	expected: 'a two-letter ISO 639-1 language code',
 };
 const currency: FieldRule = {
-	matches: (value) =>
-		typeof value === 'string' && /^[A-Z]{3}$/.test(value) && currencyNames.of(value) !== undefined,
+	matches: (value) => typeof value === 'string' && currencyCodes.has(value),
 	expected: 'a three-letter ISO 4217 currency code',
 };
 const publicationDate = dateValue('YYYY', 'YYYY-MM', 'YYYY-MM-DD');
 const day = dateValue('YYYY-MM-DD');
 const citationCount = format(/^\d+$/, 'a non-negative integer string');
+const datasetYear = format(/^-?\d+$/, 'a publication year');
 
 function validOrcid(value: unknown): boolean {
-	if (typeof value !== 'string' || !/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/i.test(value)) return false;
+	if (typeof value !== 'string' || !/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(value)) return false;
 	const digits = value.replace(/-/g, '');
 	let total = 0;
 	for (const digit of digits.slice(0, 15)) total = (total + Number(digit)) * 2;
 	const checkDigit = (12 - (total % 11)) % 11;
-	return digits[15].toUpperCase() === (checkDigit === 10 ? 'X' : String(checkDigit));
+	return digits[15] === (checkDigit === 10 ? 'X' : String(checkDigit));
 }
 
 const identifierTypes = new Map<string, (id: string) => boolean>([
@@ -35,7 +67,7 @@ const identifierTypes = new Map<string, (id: string) => boolean>([
 	['issn', (id) => /^\d{4}-?\d{3}[\dX]$/i.test(id)],
 	['isbn', (id) => /^(?:\d{9}[\dX]|\d{13})$/i.test(id.replace(/[ -]/g, ''))],
 	['orcid', validOrcid],
-	['omid', (id) => /^[a-z][a-z\d]*\/\d+$/i.test(id)],
+	['omid', (id) => /^[a-z][a-z\d]*\/\d+(?:\/\d+)*$/i.test(id)],
 ]);
 
 function validCitationId(value: unknown, params: IDataObject): boolean {
@@ -65,11 +97,9 @@ const citationPublicationTypes = choice(
 );
 
 function checkRange(params: IDataObject, lower: string, upper: string): string | undefined {
-	const lowerValue = params[lower];
-	const upperValue = params[upper];
-	if (lowerValue === undefined || upperValue === undefined) return undefined;
-	const start = String(lowerValue);
-	const end = String(upperValue);
+	const start = params[lower];
+	const end = params[upper];
+	if (typeof start !== 'string' || typeof end !== 'string') return undefined;
 	// An end specified as only a year or month includes that whole interval.
 	const precision = Math.min(start.length, end.length);
 	if (start.slice(0, precision) > end.slice(0, precision)) {
@@ -129,11 +159,15 @@ export const researchParameterRules: CapabilityRuleMap = {
 			open_access: booleanValue,
 			sort: format(/^[^:\s]+:\s*\S/, 'a RAMOSE field:order expression'),
 			type: {
-				matches: (value) =>
-					typeof value === 'string' &&
-					(/^[a-z][a-z\d_-]*$/.test(value) ||
+				matches(value, params) {
+					if (typeof value !== 'string' || value.trim() === '') return false;
+					// Crossref's single-value type list is not exhaustive in the catalog.
+					return (
+						!value.includes(',') ||
 						(!/\s/.test(value) &&
-							value.split(',').every((part) => citationPublicationTypes.matches(part, {})))),
+							value.split(',').every((part) => citationPublicationTypes.matches(part, params)))
+					);
+				},
 				expected:
 					'a Crossref type or a comma-separated list of documented publication types without spaces',
 			},
@@ -144,8 +178,14 @@ export const researchParameterRules: CapabilityRuleMap = {
 		check: (params) => checkRange(params, 'year_from', 'year_to'),
 	},
 	'academic.dataset': {
-		fields: { year_from: dateValue('YYYY'), year_to: dateValue('YYYY') },
-		check: (params) => checkRange(params, 'year_from', 'year_to'),
+		fields: { year_from: datasetYear, year_to: datasetYear },
+		check: (params) => {
+			const { year_from: start, year_to: end } = params;
+			if (typeof start === 'string' && typeof end === 'string' && BigInt(start) > BigInt(end)) {
+				return 'year_from must be on or before year_to.';
+			}
+			return undefined;
+		},
 	},
 	'academic.paper': {
 		fields: {

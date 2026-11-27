@@ -488,7 +488,11 @@ async function batchSearchOperation(
 	return Promise.all(
 		Array.from(queries, async (query: unknown, queryIndex: number) => {
 			const object = objectValue(query);
-			const identity = { query: object?.query ?? '', query_index: queryIndex };
+			const queryText = object?.query;
+			const identity = {
+				query: typeof queryText === 'string' ? queryText : '',
+				query_index: queryIndex,
+			};
 			try {
 				const body = searchBody(node, object);
 				const data = await search.call(this, body, itemIndex);

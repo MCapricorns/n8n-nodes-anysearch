@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - Keep a single AnySearch node version and apply the same documented parameter validation and defaults in Search and Batch Search.
 - Verify required fields, supported tags and documented parameter formats, choices and conditional constraints against the reviewed AnySearch capability catalog.
+- Follow the documented DOI, ORCID and ISO identifier standards, apply submission limits before sending requests, and keep malformed batch queries out of error details.
 - Preserve HTTP status, request ID, business code and optional error code in n8n error output. Limit HTTP 402 diagnostics to status and request ID.
 - Verify outgoing requests and error diagnostics in real n8n. Run isolated fault tests without an AnySearch account.
 

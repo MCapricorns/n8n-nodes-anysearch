@@ -731,7 +731,13 @@ test('batch rejects invalid entries locally and still sends valid siblings', asy
 	const r = await runCase({
 		parameters: {
 			operation: 'batchSearch',
-			queries: [{ query: 'good' }, { query: '' }, {}, [], { query: 'bad', extra: 'unknown' }],
+			queries: [
+				{ query: 'good' },
+				{ query: '' },
+				{},
+				{ query: { password: 'synthetic' } },
+				{ query: 'bad', extra: 'unknown' },
+			],
 		},
 	});
 	assert.deepEqual(
@@ -741,6 +747,7 @@ test('batch rejects invalid entries locally and still sends valid siblings', asy
 	const [output] = r.output;
 	assert.equal(output.length, 5);
 	assert(output[0].json.results);
+	assert.equal(output[3].json.details.query, '');
 	for (const [index, { json, pairedItem }] of output.slice(1).entries()) {
 		assert.match(json.error, /query|object|field|parameter/i);
 		assert.equal(json.details.query_index, index + 1);

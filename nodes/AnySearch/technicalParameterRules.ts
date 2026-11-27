@@ -63,6 +63,9 @@ function packageIdentifier(value: string): boolean {
 	if (version < 0 || !/^[^\s@,]+$/.test(value.slice(version + 1))) return false;
 	const [ecosystem, ...nameParts] = value.slice(0, version).split(':');
 	if (!nameParts.every((part) => /^[^\s,]+$/.test(part))) return false;
+	if (ecosystem === 'npm')
+		return nameParts.length === 1 && /^(?:@[^@/]+\/)?[^@/]+$/.test(nameParts[0]);
+	if (nameParts.some((part) => part.includes('@'))) return false;
 	if (ecosystem === 'Maven') return nameParts.length === 2;
 	if (packageRegistries.has(ecosystem)) return nameParts.length === 1;
 	if (ecosystem === 'Debian' || ecosystem === 'Alpine') {
@@ -70,7 +73,7 @@ function packageIdentifier(value: string): boolean {
 	}
 	// Release-qualified OS names are open-ended. Registry spelling is still case-sensitive.
 	return (
-		/^[A-Z][a-zA-Z\d .-]+$/.test(ecosystem) &&
+		/^[a-z\d][a-z\d .-]*$/i.test(ecosystem) &&
 		!knownEcosystems.has(ecosystem.toLowerCase()) &&
 		nameParts.length === 2
 	);
@@ -79,20 +82,18 @@ function packageIdentifier(value: string): boolean {
 const cveId = /^CVE-\d{4}-\d{4,}$/i;
 const commitId = /^[a-f\d]{40}$/i;
 
-function identifiers(value: string, type: unknown): Set<string> {
-	return new Set(
-		value.split(',').map((entry) => {
-			const identifier = entry.trim();
-			return type === 'package' ? identifier : identifier.toLowerCase();
-		}),
-	);
+function identifiers(value: string, type: unknown): string[] {
+	return value.split(',').map((entry) => {
+		const identifier = entry.trim();
+		return type === 'package' ? identifier : identifier.toLowerCase();
+	});
 }
 
 const vulnerabilityValue: FieldRule = {
 	matches: (value, params) => {
 		if (typeof value !== 'string') return false;
 		const { type } = params;
-		const values = [...identifiers(value, type)];
+		const values = identifiers(value, type);
 		if (type === 'cve') return values.length <= 5 && values.every((id) => cveId.test(id));
 		if (type === 'commit') return values.every((id) => commitId.test(id));
 		if (type === 'package') return values.length <= 1000 && values.every(packageIdentifier);
@@ -102,6 +103,9 @@ const vulnerabilityValue: FieldRule = {
 };
 
 export const technicalParameterRules: CapabilityRuleMap = {
+	'security.intel': {
+		fields: { ioc: format(/^\S+$/, 'a single domain, IP address, URL, or file hash') },
+	},
 	'security.noise': {
 		fields: {
 			ip: {
@@ -122,8 +126,8 @@ export const technicalParameterRules: CapabilityRuleMap = {
 		fields: { type: choice('cve', 'commit', 'package'), value: vulnerabilityValue },
 		check: (params, query) => {
 			if (typeof params.value !== 'string') return undefined;
-			const expected = identifiers(params.value, params.type);
-			const requested = identifiers(query, params.type);
+			const expected = new Set(identifiers(params.value, params.type));
+			const requested = new Set(identifiers(query, params.type));
 			if (requested.size !== expected.size || [...requested].some((id) => !expected.has(id))) {
 				return 'query must use the same identifiers as params.value';
 			}
@@ -136,7 +140,6 @@ export const technicalParameterRules: CapabilityRuleMap = {
 			arrival: airport,
 			cabin_class: choice('Economy', 'Business', 'First', 'PremiumEconomy'),
 			children: count,
-			currency: format(/^[a-z]{3}$/i, 'a three-letter currency code'),
 			date: flightDate,
 			departure: airport,
 			infants: count,
