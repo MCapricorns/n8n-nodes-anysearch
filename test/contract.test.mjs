@@ -902,8 +902,34 @@ test('invalid source selectors and overview periods fail before HTTP on both ent
 });
 
 test('finance ranges and mastery champion filters reject invalid types and preserve legitimate values', async () => {
-	const invalidPeriods = [false, true, 7, null, {}, [], '', ' ', '7days', '-7d', '2y'];
-	const validPeriods = ['7d', '14d', '30d', '90d', '180d', '1d', '23d', '1234d', '1y', '5y'];
+	const invalidPeriods = [
+		false,
+		true,
+		7,
+		null,
+		{},
+		[],
+		'',
+		' ',
+		'7days',
+		'-7d',
+		'0d',
+		'000d',
+		'2y',
+	];
+	const validPeriods = [
+		'7d',
+		'14d',
+		'30d',
+		'90d',
+		'180d',
+		'1d',
+		'007d',
+		'23d',
+		'1234d',
+		'1y',
+		'5y',
+	];
 	for (const [tag, base, field, valid, invalid] of [
 		['finance.quote', { type: 'stock', symbol: 'AAPL' }, 'period', validPeriods, invalidPeriods],
 		['finance.calendar', { type: 'dividends' }, 'period', validPeriods, invalidPeriods],

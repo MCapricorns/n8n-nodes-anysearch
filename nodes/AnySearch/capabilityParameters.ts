@@ -191,11 +191,11 @@ export function capabilityParameters(
 	if (
 		period !== undefined &&
 		quoteRangeTypes.get(tag)?.includes(type) &&
-		(typeof period !== 'string' || !/^(?:\d+d|[15]y)$/.test(period))
+		(typeof period !== 'string' || !/^(?:0*[1-9]\d*d|[15]y)$/.test(period))
 	) {
 		throw new NodeOperationError(
 			node,
-			`For ${tag}, period must be a day range such as 7d, or 1y or 5y.`,
+			`For ${tag}, period must be a positive day range such as 7d, or 1y or 5y.`,
 		);
 	}
 	let allowEmpty: string[] = [];

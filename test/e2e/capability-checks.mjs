@@ -109,6 +109,12 @@ const cases = [
 		params: { type: 'leaderboard', region: 'kr', tier: 'GOLD', division: false },
 		missing: ['division'],
 	},
+	{
+		query: 'Zero-day stock quote',
+		tag: 'finance.quote',
+		params: { type: 'stock', symbol: 'AAPL', period: '000d' },
+		missing: ['period'],
+	},
 ];
 
 function checkItem(entry, item) {
