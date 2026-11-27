@@ -22,7 +22,7 @@ const node = {
 	id: 'contract-test',
 	name: 'AnySearch',
 	type: 'n8n-nodes-anysearch.anySearch',
-	typeVersion: 2,
+	typeVersion: 1,
 	position: [0, 0],
 	parameters: {},
 };
@@ -45,12 +45,11 @@ function scenario({
 	credentialError,
 	continueOnFail = false,
 	onError,
-	typeVersion = node.typeVersion,
 	inputItems = [{ json: {} }],
 } = {}) {
 	const requests = [];
 	const hasCredential = credentialData !== undefined || credentialError !== undefined;
-	const configured = { ...node, typeVersion, onError };
+	const configured = { ...node, onError };
 	if (hasCredential)
 		configured.credentials = {
 			anySearchApi: { id: 'offline-credential', name: 'Offline fixture' },
@@ -126,19 +125,7 @@ test('specialized acceptance binds HTTP IDs to the originating single node and b
 			continueOnFail: true,
 			response({ body }) {
 				const request_id = 'specialized-' + requests.length;
-				const missingRequired = [
-					'Flight number missing',
-					'Flight ticket parameters missing',
-					'Flight departure missing',
-					'Overview ticker keys missing',
-				].includes(body.query);
-				const status = missingRequired ? 400 : 200;
-				requests.push({ body, request_id, status });
-				if (missingRequired) {
-					return Object.assign(new Error('Offline invalid request'), {
-						response: { status, data: { code: -1, request_id } },
-					});
-				}
+				requests.push({ body, request_id, status: 200, code: 0 });
 				return { ...success, request_id };
 			},
 		});
@@ -147,6 +134,8 @@ test('specialized acceptance binds HTTP IDs to the originating single node and b
 			results: run.output[0].map(({ json }) => ({
 				request_id: json.request_id ?? json.details?.request_id,
 				query_index: json.query_index ?? json.details?.query_index,
+				error: json.error,
+				http_status: json.details?.http_status,
 			})),
 		});
 	}
@@ -204,52 +193,53 @@ test('search maps every optional parameter onto the request body', async () => {
 	});
 });
 
-test('search rejects malformed tag parameters before any request', async () => {
-	const r = await runCase({ parameters: { options: { params: 'not json' } } });
-	assert.equal(r.outcome, 'error');
-	assert.equal(r.requests.length, 0);
-});
-
-test('explicit JSON format is forwarded and AnySearch validates incomplete tags', async () => {
-	const r = await runCase({ parameters: { options: { tag: 'future.new-tag', format: 'json' } } });
-	assert.equal(r.requests[0].body.format, 'json');
-	const invalid = await runCase({
-		parameters: { options: { tag: 'finance' } },
-		statusCode: 400,
-		response: { code: -1, error_code: 'INVALID_TAG', request_id: 'tag-id' },
-	});
-	assert.equal(invalid.requests[0].body.tag, 'finance');
-	assert.equal(invalid.context.http_status, 400);
-	assert.equal(invalid.context.error_code, 'INVALID_TAG');
-});
-
-test('search sends a blank query unchanged and reports the AnySearch rejection', async () => {
-	const r = await runCase({
-		parameters: { query: '   ' },
-		statusCode: 400,
-		response: { code: -1, message: 'Query is required.', request_id: 'query-id' },
-	});
-	assert.equal(r.outcome, 'error');
-	assert.equal(r.requests[0].body.query, '   ');
-	assert.equal(r.message, 'Query is required.');
-	assert.equal(r.context.request_id, 'query-id');
-});
-
-test('n8n preflight allows required REST fields to reach AnySearch when empty', () => {
-	const { description } = new AnySearch();
-	for (const parameters of [
-		{ resource: 'search', operation: 'search', query: '' },
-		{ resource: 'extract', operation: 'extract', url: '' },
-		{ resource: 'capability', operation: 'getSubDomains', domains: [] },
+test('Search and Batch Search reject invalid REST request parameters locally', async () => {
+	const query = 'contract query';
+	for (const [input, message] of [
+		[{ query: '   ' }, /query/i],
+		[{ query: 42 }, /query/i],
+		...[0, 11, 1.5, '2', null].map((max_results) => [{ query, max_results }, /max.results/i]),
+		[{ query, tag: 'finance' }, /tag/i],
+		[{ query, tag: 'finance.unknown' }, /tag/i],
+		[{ query, zone: 'eu' }, /zone/i],
+		[{ query, language: 42 }, /language/i],
+		[{ query, format: 'html' }, /format/i],
+		[{ query, params: 'not json' }, /valid JSON/i],
+		[{ query, params: [1] }, /json object/i],
+		[{ query, params: new Date('2026-11-27') }, /json object/i],
+		[{ query, params: null }, /json object/i],
+		[{ query, params: { library: 'react' } }, /tag/i],
 	]) {
-		assert.equal(
-			NodeHelpers.getNodeParametersIssues(
-				description.properties,
-				{ ...node, parameters },
-				description,
-			),
-			null,
+		const { query, max_results, ...options } = input;
+		if (max_results !== undefined) options.maxResults = max_results;
+		const search = await runCase({ parameters: { query, options } });
+		assert.equal(search.outcome, 'error');
+		assert.match(search.message, message);
+		assert.equal(search.requests.length, 0);
+		assert.equal(search.context.request_id, undefined);
+
+		const batch = await runCase({ parameters: { operation: 'batchSearch', queries: [input] } });
+		assert.equal(batch.requests.length, 0);
+		const { json } = batch.output[0][0];
+		assert.match(json.error, message);
+		assert.equal(json.details.request_id, undefined);
+	}
+});
+
+test('the single node version marks required REST fields for n8n preflight', () => {
+	const { description } = new AnySearch();
+	assert.equal(description.version, node.typeVersion);
+	for (const [parameters, field] of [
+		[{ resource: 'search', operation: 'search', query: '' }, 'query'],
+		[{ resource: 'extract', operation: 'extract', url: '' }, 'url'],
+		[{ resource: 'capability', operation: 'getSubDomains', domains: [] }, 'domains'],
+	]) {
+		const issues = NodeHelpers.getNodeParametersIssues(
+			description.properties,
+			{ ...node, parameters },
+			description,
 		);
+		assert(issues?.parameters?.[field]?.length, field);
 	}
 });
 
@@ -352,44 +342,50 @@ test('search rejects malformed documented metadata fields', async () => {
 	}
 });
 
-test('extract sends invalid URLs unchanged for AnySearch to validate', async () => {
-	for (const url of ['example.com', ' https://example.com ', 'ftp://example.com', '']) {
-		const r = await runCase({
-			parameters: { resource: 'extract', operation: 'extract', url },
-			statusCode: 400,
-			response: { code: -1, message: 'URL is invalid.', error_code: 'invalid_extract_url' },
-		});
-		assert.equal(r.outcome, 'error');
-		assert.deepEqual(r.requests[0].body, { url });
-		assert.equal(r.requests[0].headers['Content-Type'], 'application/json');
-		assert.equal(r.message, 'URL is invalid.');
-		assert.equal(r.context.error_code, 'invalid_extract_url');
-	}
-});
-
-test('version 1 trims extraction URLs and rejects malformed URLs before HTTP', async () => {
+test('extract trims valid URLs and rejects malformed or unsupported URLs before HTTP', async () => {
 	const url = 'https://example.com/page';
 	const parameters = { resource: 'extract', operation: 'extract' };
 	const trimmed = await runCase({
-		typeVersion: 1,
 		parameters: { ...parameters, url: ` ${url} ` },
 		response: { code: 0, data: { url, title: 'Title', content: 'Body' } },
 	});
 	assert.equal(trimmed.outcome, 'returned');
 	assert.deepEqual(trimmed.requests[0].body, { url });
+	assert.equal(trimmed.requests[0].headers['Content-Type'], 'application/json');
 
-	for (const [badUrl, message] of [
-		['example.com', /absolute public HTTP\(S\) URL/],
-		['ftp://example.com', /must use HTTP\(S\)/],
+	for (const url of [
+		'',
+		'example.com',
+		'ftp://example.com',
+		'https://example com',
+		'https://127.0.0.1',
+		'http://[::1]',
+		42,
 	]) {
-		const rejected = await runCase({
-			typeVersion: 1,
-			parameters: { ...parameters, url: badUrl },
-		});
+		const rejected = await runCase({ parameters: { ...parameters, url } });
 		assert.equal(rejected.outcome, 'error');
-		assert.match(rejected.message, message);
+		assert.match(rejected.message, /URL/i);
 		assert.equal(rejected.requests.length, 0);
 	}
+});
+
+test('extract checks the 16 KiB UTF-8 request-body limit', async () => {
+	const limit = 16 * 1024;
+	const base = 'https://example.com/';
+	const suffix = '文';
+	const remainingBytes = limit - Buffer.byteLength(JSON.stringify({ url: base + suffix }));
+	const url = base + 'a'.repeat(remainingBytes) + suffix;
+	const parameters = { resource: 'extract', operation: 'extract' };
+	const allowed = await runCase({
+		parameters: { ...parameters, url },
+		response: { code: 0, data: { url, title: 'Title', content: 'Body' } },
+	});
+	assert.equal(allowed.outcome, 'returned');
+	assert.deepEqual(allowed.requests[0].body, { url });
+	const rejected = await runCase({ parameters: { ...parameters, url: url + 'a' } });
+	assert.equal(rejected.outcome, 'error');
+	assert.match(rejected.message, /16\s*ki?b/i);
+	assert.equal(rejected.requests.length, 0);
 });
 
 test('domain listing returns one item per domain', async () => {
@@ -424,26 +420,24 @@ test('the domain picker reads the same domain definitions as the capability oper
 	await assert.rejects(invalid.loadDomains(), /invalid domain/);
 });
 
-test('sub-domain listing preserves repeated query values in version 2 and cleans them in version 1', async () => {
+test('sub-domain listing trims and deduplicates values before repeating the domain query parameter', async () => {
 	const response = {
 		code: 0,
 		data: { domains: [{ domain: 'code', sub_domains: [{ sub_domain: 'code.doc' }] }] },
 	};
-	for (const [typeVersion, query] of [
-		[1, 'domain=code&domain=finance'],
-		[2, 'domain=code&domain=finance&domain=code&domain=&domain=+finance+'],
+	for (const domains of [
+		['code', 'finance', 'code', '', ' finance '],
+		'code, finance, code, , finance ',
 	]) {
 		const r = await runCase({
-			typeVersion,
 			response,
-			parameters: {
-				resource: 'capability',
-				operation: 'getSubDomains',
-				domains: ['code', 'finance', 'code', '', ' finance '],
-			},
+			parameters: { resource: 'capability', operation: 'getSubDomains', domains },
 		});
 		assert.equal(r.outcome, 'returned');
-		assert.equal(r.requests[0].url, `https://api.anysearch.com/v1/sub-domains?${query}`);
+		assert.equal(
+			r.requests[0].url,
+			'https://api.anysearch.com/v1/sub-domains?domain=code&domain=finance',
+		);
 	}
 });
 
@@ -468,20 +462,24 @@ test('sub-domain listing rejects malformed capability definitions', async () => 
 	}
 });
 
-test('sub-domain listing lets AnySearch report an empty selection', async () => {
-	const parameters = { resource: 'capability', operation: 'getSubDomains', domains: [] };
-	const r = await runCase({
-		parameters,
-		statusCode: 400,
-		response: { code: -1, message: 'At least one domain parameter is required.' },
-	});
-	assert.equal(r.requests[0].url, 'https://api.anysearch.com/v1/sub-domains');
-	assert.equal(r.message, 'At least one domain parameter is required.');
-	assert.equal(r.context.http_status, 400);
+test('sub-domain listing rejects an empty selection or non-string names locally', async () => {
+	for (const domains of [[], [' ', ''], [42]]) {
+		const r = await runCase({
+			parameters: { resource: 'capability', operation: 'getSubDomains', domains },
+		});
+		assert.equal(r.outcome, 'error');
+		assert.match(r.message, /domain/i);
+		assert.equal(r.requests.length, 0);
+	}
+});
 
-	const legacy = await runCase({ typeVersion: 1, parameters });
-	assert.equal(legacy.requests.length, 0);
-	assert.match(legacy.message, /Domain Names or IDs must not be empty/);
+test('sub-domain listing accepts a successful empty response for an unknown domain', async () => {
+	const r = await runCase({
+		parameters: { resource: 'capability', operation: 'getSubDomains', domains: ['unknown'] },
+		response: { code: 0, data: { domains: [] } },
+	});
+	assert.equal(r.requests[0].url, 'https://api.anysearch.com/v1/sub-domains?domain=unknown');
+	assert.deepEqual(r.output, [[]]);
 });
 
 test('an unselected credential uses the anonymous helper without Authorization', async () => {
@@ -634,20 +632,24 @@ for (const results of [
 	});
 }
 
-test('search preserves supplied values and leaves omitted fields to AnySearch defaults', async () => {
-	const query = '  a search query  ';
-	const minimal = await runCase({ parameters: { query, options: { zone: '' } } });
+test('search trims text fields and leaves omitted options to AnySearch defaults', async () => {
+	const query = 'a search query';
+	const input = ` ${query} `;
+	const minimal = await runCase({ parameters: { query: input, options: { zone: '' } } });
 	assert.deepEqual(minimal.requests[0].body, { query });
-	for (const maxResults of [0, 11, 1.5, '2', null]) {
+	for (const maxResults of [1, 10]) {
 		const r = await runCase({
-			parameters: { query, options: { maxResults, zone: ' intl ', format: ' ', params: 'null' } },
+			parameters: {
+				query: input,
+				options: { maxResults, zone: ' intl ', format: ' json ', language: ' en ' },
+			},
 		});
 		assert.deepEqual(r.requests[0].body, {
 			query,
 			max_results: maxResults,
-			zone: ' intl ',
-			format: ' ',
-			params: null,
+			zone: 'intl',
+			format: 'json',
+			language: 'en',
 		});
 	}
 });
@@ -688,7 +690,7 @@ test('batch searches run concurrently, preserve order and isolate failures', asy
 			queries: [
 				{ query: 'first', max_results: 1 },
 				{ query: 'second' },
-				{ query: 'third', params: { empty: '', optional: false } },
+				{ query: 'third', tag: 'code.doc', params: { library: 'react' } },
 			],
 		},
 		response: async (options) => {
@@ -714,7 +716,7 @@ test('batch searches run concurrently, preserve order and isolate failures', asy
 	assert.equal(r.output[0][1].json.details.request_id, 'failed-id');
 	assert(r.output[0][1].json.error);
 	assert(r.output[0][2].json.results.length);
-	assert.deepEqual(r.requests[2].body.params, { empty: '', optional: false });
+	assert.deepEqual(r.requests[2].body.params, { library: 'react' });
 });
 
 for (const queries of [[], Array(6).fill({ query: 'test' }), null, '{}', 'broken']) {
@@ -725,49 +727,43 @@ for (const queries of [[], Array(6).fill({ query: 'test' }), null, '{}', 'broken
 	});
 }
 
-test('batch invalid query does not prevent valid siblings from executing', async () => {
-	const failed = Object.assign(new Error('offline HTTP 400 fixture'), {
-		response: {
-			status: 400,
-			data: { code: -1, message: 'Query is required.', request_id: 'bad-id' },
-		},
-	});
+test('batch rejects invalid entries locally and still sends valid siblings', async () => {
 	const r = await runCase({
 		parameters: {
 			operation: 'batchSearch',
-			queries: [
-				{ query: 'good', extra: 'sent unchanged' },
-				{ query: '', params: '{}' },
-				{},
-				[],
-				42,
-			],
+			queries: [{ query: 'good' }, { query: '' }, {}, [], { query: 'bad', extra: 'unknown' }],
 		},
-		response: ({ body }) => (body.query ? success : failed),
 	});
 	assert.deepEqual(
 		r.requests.map(({ body }) => body),
-		[{ query: 'good', extra: 'sent unchanged' }, { query: '', params: '{}' }, '{}', '[]', '42'],
+		[{ query: 'good' }],
 	);
-	assert(r.output[0][0].json.results);
-	assert.equal(r.output[0][1].json.error, 'Query is required.');
-	assert.equal(r.output[0][1].json.details.request_id, 'bad-id');
+	const [output] = r.output;
+	assert.equal(output.length, 5);
+	assert(output[0].json.results);
+	for (const [index, { json, pairedItem }] of output.slice(1).entries()) {
+		assert.match(json.error, /query|object|field|parameter/i);
+		assert.equal(json.details.query_index, index + 1);
+		assert.equal(json.details.request_id, undefined);
+		assert.equal(json.details.http_status, undefined);
+		assert.deepEqual(pairedItem, { item: 0 });
+	}
 });
 
 test('a sparse Batch Search expression yields an error item instead of an empty output slot', async () => {
 	const queries = Array(2);
 	queries[1] = { query: 'good' };
-	const failure = Object.assign(new Error('offline HTTP 400 fixture'), { statusCode: 400 });
 	const r = await runCase({
 		parameters: { operation: 'batchSearch', queries },
-		response: ({ body }) => (body === 'null' ? failure : success),
 	});
 	assert.deepEqual(
 		r.requests.map(({ body }) => body),
-		['null', { query: 'good' }],
+		[{ query: 'good' }],
 	);
+	assert.match(r.output[0][0].json.error, /query|object/i);
 	assert.equal(r.output[0][0].json.details.query_index, 0);
-	assert.equal(r.output[0][0].json.details.http_status, 400);
+	assert.equal(r.output[0][0].json.details.http_status, undefined);
+	assert.deepEqual(r.output[0][0].pairedItem, { item: 0 });
 	assert.equal(r.output[0][1].json.query_index, 1);
 });
 
@@ -820,55 +816,45 @@ for (const continueOnFail of [false, true]) {
 	);
 }
 
-test('Search and Batch Search submit capability parameters as supplied', async () => {
-	const examples = [
-		['travel.flight_status', { flight_number: 'CA981' }],
-		['travel.flight_status', { flight_number: 'CA981', departure: '' }],
-		['finance.fundamental', { type: 'overview' }],
-		['finance.fundamental', { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' }],
-		['finance.fundamental', { type: ' balance ', cn_code: 600519, symbol: false }],
-		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }],
-		['finance.quote', { type: 'crypto' }],
-		['finance.quote', { type: 'stock', symbol: 'AAPL', period: '0d' }],
-		['finance.news', { type: 'flash', news_src: 'future_source' }],
-		['gaming.esports', { type: 'player', game_name: 'Hide on Bush#KR1' }],
-		['gaming.esports', { type: 'champion', region: 'unused' }],
-		['gaming.esports', { type: 'leaderboard', region: 'kr', tier: 'MASTER', division: false }],
-		['gaming.esports', { type: 'match_detail', match_id: 'EUW1_6723541890' }],
-		['academic.citation', { op: 'citation', id: '10.1038/s41586-021-03819-2' }],
-		['code.doc', { library: null }],
-		['future.tag', { optional: false, nested: { filter: ['a', 2] } }],
-		['finance.fundamental', {}],
-	];
-	for (const [tag, input] of examples) {
-		const query = 'test';
-		const params = Object.freeze(input);
-		const body = { query, tag, params };
-		for (const parameters of [
-			{ query, options: { tag, params } },
-			{ query, options: { tag, params: JSON.stringify(params) } },
-			{ operation: 'batchSearch', queries: [body] },
-			{ operation: 'batchSearch', queries: JSON.stringify([body]) },
-		]) {
-			const run = await runCase({ parameters });
-			assert.equal(run.outcome, 'returned', run.message);
-			assert.equal(run.requests.length, 1, tag);
-			assert.deepEqual(run.requests[0].body, body, tag);
-		}
-	}
-});
-
-test('version 1 Search and Batch Search preserve released capability defaults and validation', async () => {
+test('both search operations apply shared capability validation and compatibility defaults', async () => {
 	const examples = [
 		['travel.flight_status', { flight_number: 'CA981' }, { departure: '' }],
 		['finance.fundamental', { type: 'overview' }, { symbol: '', cn_code: '' }],
-		['finance.fundamental', { type: 'balance', cn_code: 600519, symbol: 'AAPL' }, { symbol: '' }],
+		[
+			'finance.fundamental',
+			{ type: ' balance ', cn_code: '600519.SH', symbol: 'AAPL' },
+			{ type: 'balance', symbol: '' },
+		],
 		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }, { period: '90d' }],
+		['finance.quote', { type: 'forex', symbol: 'EURUSD' }, {}],
+		['gaming.esports', { type: 'match_detail', match_id: 'EUW1_6723541890' }, {}],
+		['academic.citation', { id: '33817056', id_type: 'pmid' }, {}],
+		['academic.citation', { id: '06101801781-06180334099', op: 'citation' }, {}],
+		['code.doc', {}, /\blibrary\b/],
+		['finance.fundamental', { type: 'balance', cn_code: 600519 }, /\bcn_code\b/],
+		['academic.citation', { id: 33817056, id_type: 'pmid' }, /\bid\b/],
+		['code.doc', { library: null }, /\blibrary\b/],
+		['code.doc', { library: 'react', undocumented: 'value' }, /unsupported parameters/i],
+		['travel.flight', {}, /(?=.*\bdeparture\b)(?=.*\barrival\b)(?=.*\bdate\b)/],
+		['travel.flight_status', { departure: '' }, /\bflight_number\b/],
+		['travel.flight_status', { flight_number: 'CA981', date: '2026-02-29' }, /\bdate\b/],
 		['finance.quote', { type: 'stock', symbol: 'AAPL', period: '0d' }, /\bperiod\b/],
 		['finance.quote', { type: 'crypto' }, /\bsymbol\b/],
+		['finance.quote', { type: 'forex', symbol: 'EUR/USD' }, /\bsymbol\b/],
+		['finance.news', { type: 'flash', news_src: 'future_source' }, /\bnews_src\b/],
 		['gaming.esports', { type: 'player', game_name: 'Hide on Bush#KR1' }, /\bregion\b/],
 		['gaming.esports', { type: 'match_detail', match_id: null }, /\bmatch_id\b/],
+		[
+			'gaming.esports',
+			{ type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
+			/\bdivision\b/,
+		],
 		['academic.citation', { op: 'citation', id: '10.1038/example' }, /\bOCI\b/],
+		['academic.paper', { year: '2026-2020' }, /\byear\b/],
+		['academic.paper', { sort: 'date' }, /\bsort\b/],
+		['academic.person', { orcid: '0000-0002-1825-0098' }, /\borcid\b/],
+		['health.drug', { type: 'rxnorm' }, /\btype\b/],
+		['business.trade', { hs_code: '123' }, /\bhs_code\b/],
 	];
 	for (const [tag, input, expected] of examples) {
 		const params = Object.freeze(input);
@@ -877,11 +863,12 @@ test('version 1 Search and Batch Search preserve released capability defaults an
 			{ query, options: { tag, params: JSON.stringify(params) } },
 			{ operation: 'batchSearch', queries: [{ query, tag, params }] },
 		]) {
-			const run = await runCase({ typeVersion: 1, parameters });
+			const run = await runCase({ parameters });
 			if (expected instanceof RegExp) {
 				assert.equal(run.requests.length, 0, tag);
-				const error = run.output?.[0][0].json.error ?? run.message;
-				assert.match(error, expected, tag);
+				const error = run.output?.[0][0].json;
+				assert.match(error?.error ?? run.message, expected, tag);
+				assert.equal((error?.details ?? run.context).request_id, undefined, tag);
 			} else {
 				assert.equal(run.outcome, 'returned', run.message);
 				assert.equal(run.requests.length, 1, tag);
@@ -892,7 +879,7 @@ test('version 1 Search and Batch Search preserve released capability defaults an
 });
 
 test('every reviewed catalog parameter reaches HTTP on both entry points', async () => {
-	const { tags } = localRequire('./test/e2e/catalog.json');
+	const { tags } = localRequire('./nodes/AnySearch/catalog.json');
 	const cases = localRequire('./test/e2e/search-cases.json');
 	for (const [tag, fields] of Object.entries(tags)) {
 		for (const [field, { required }] of Object.entries(fields)) {
@@ -923,29 +910,22 @@ test('every reviewed catalog parameter reaches HTTP on both entry points', async
 	}
 });
 
-test('existing workflows can forward provider-specific paper fields outside the current catalog', async () => {
-	const params = {
-		data_source: 'arxiv',
-		source: 'MED',
-		categories: 'cs.CL',
-		category: 'cs.LG',
-		domain: 'arxiv.org',
-		citation_count: '100',
-		citation_doi: '10.48550/arXiv.1706.03762',
-		order: 'desc',
-		sort: 'date',
-		date_type: 'pdat',
-		field: 'ti',
-		journal: 'Nature',
-		type: 'article',
-		has_pdf: 'true',
-		kind: 'abstract',
-		year_from: '2017',
-		year_to: '2018',
-		document_type: 'research',
-	};
-	const r = await runCase({ parameters: { options: { tag: 'academic.paper', params } } });
-	assert.deepEqual(r.requests[0].body.params, params);
+test('paper search applies the current catalog to legacy fields and values', async () => {
+	const tag = 'academic.paper';
+	const query = 'reviewed paper';
+	for (const [params, message] of [
+		[{ data_source: 'arxiv' }, /unsupported parameters/i],
+		[{ sort: 'date' }, /sort/i],
+	]) {
+		const single = await runCase({ parameters: { query, options: { tag, params } } });
+		assert.match(single.message, message);
+		assert.equal(single.requests.length, 0);
+		const batch = await runCase({
+			parameters: { operation: 'batchSearch', queries: [{ query, tag, params }] },
+		});
+		assert.match(batch.output[0][0].json.error, message);
+		assert.equal(batch.requests.length, 0);
+	}
 });
 
 test('unrecognized 400 messages and credential-like fields stay private, including after rerouting', async () => {
@@ -1000,18 +980,22 @@ test('extract preserves Unicode and server truncation boundaries', async () => {
 });
 
 test('documented API errors retain their status, message, and supplied codes in n8n', async () => {
-	for (const [statusCode, message, errorCode] of [
+	const extract = { resource: 'extract', operation: 'extract', url: 'https://example.com' };
+	const subDomains = { resource: 'capability', operation: 'getSubDomains', domains: ['code'] };
+	for (const [statusCode, message, errorCode, parameters] of [
 		[400, 'Query is required.'],
-		[400, 'At least one domain parameter is required.'],
-		[400, 'URL is invalid.', 'invalid_extract_url'],
+		[400, 'At least one domain parameter is required.', undefined, subDomains],
+		[400, 'URL is invalid.', 'invalid_extract_url', extract],
 		[401, 'Invalid API key.', 'invalid_api_key'],
-		[422, 'Extraction failed.', 'extract_failed'],
+		[422, 'Extraction failed.', 'extract_failed', extract],
 	]) {
 		const r = await runCase({
+			parameters,
 			statusCode,
 			headers: { 'X-Request-ID': 'official-error-id' },
 			response: { code: -1, message, ...(errorCode && { error_code: errorCode }) },
 		});
+		assert.equal(r.requests.length, 1);
 		assert.equal(r.message, message);
 		assert.equal(r.context.http_status, statusCode);
 		assert.equal(r.context.request_id, 'official-error-id');
@@ -1023,6 +1007,10 @@ test('documented API errors retain their status, message, and supplied codes in 
 test('missing capability parameters keep their diagnostics for returned and thrown HTTP errors', async () => {
 	const message = "Missing required params for tag 'travel.flight': departure, arrival, date.";
 	const body = { code: -1, message, error_code: 'MISSING_REQUIRED_PARAMS' };
+	const query = 'fixture flight';
+	const tag = 'travel.flight';
+	const params = { departure: 'PEK', arrival: 'JFK', date: '2027-05-20' };
+	const parameters = { query, options: { tag, params } };
 	const request_id = 'catalog-error-id';
 	const returned = { statusCode: 400, response: { ...body, request_id } };
 	const thrown = (data) => ({
@@ -1034,9 +1022,10 @@ test('missing capability parameters keep their diagnostics for returned and thro
 		thrown(body),
 		{ ...thrown(JSON.stringify(body)), continueOnFail: true },
 		{ ...returned, continueOnFail: true, onError: 'continueErrorOutput' },
-		{ ...returned, parameters: { operation: 'batchSearch', queries: [{ query: 'fixture' }] } },
+		{ ...returned, parameters: { operation: 'batchSearch', queries: [{ query, tag, params }] } },
 	]) {
-		const r = await runCase(config);
+		const r = await runCase({ parameters, ...config });
+		assert.equal(r.requests.length, 1);
 		const item = r.output?.[0][0].json;
 		const details = r.context ?? JSON.parse(JSON.stringify(item)).details;
 		assert.equal(r.message ?? item.error, message);

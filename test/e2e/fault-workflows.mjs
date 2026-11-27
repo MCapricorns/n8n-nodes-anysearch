@@ -86,7 +86,7 @@ export async function runFaultWorkflows({
 			id: scenario,
 			name: scenario,
 			type: 'n8n-nodes-anysearch.anySearch',
-			typeVersion: 2,
+			typeVersion: 1,
 			position: [400, index * 100],
 			parameters:
 				scenario === 'invalid-content'
@@ -115,7 +115,7 @@ export async function runFaultWorkflows({
 		id: 'batch-errors',
 		name: 'Batch Error Output',
 		type: 'n8n-nodes-anysearch.anySearch',
-		typeVersion: 2,
+		typeVersion: 1,
 		position: [800, 0],
 		parameters: {
 			resource: 'search',

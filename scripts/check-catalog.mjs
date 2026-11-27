@@ -27,7 +27,7 @@ const domains = await discover('/v1/sub-domains?' + query);
 assert.deepEqual(domains.map(({ domain }) => domain).sort(), listed.sort());
 const live = catalogDefinitions(domains);
 const { tags: reviewed } = JSON.parse(
-	await readFile(new URL('../test/e2e/catalog.json', import.meta.url)),
+	await readFile(new URL('../nodes/AnySearch/catalog.json', import.meta.url)),
 );
 const cases = JSON.parse(await readFile(new URL('../test/e2e/search-cases.json', import.meta.url)));
 const coverage = catalogCoverage(cases, live);

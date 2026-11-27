@@ -12,27 +12,28 @@ const cases = [
 	{
 		query: 'AAPL',
 		tag: 'finance.fundamental',
-		params: { type: 'overview', symbol: 'AAPL', cn_code: '' },
+		params: { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
+		expectedParams: { type: 'overview', symbol: 'AAPL', cn_code: '' },
 		result: /AAPL.*Fundamental/i,
 	},
 	{
 		query: 'Flight number missing',
 		tag: 'travel.flight_status',
 		params: { departure: '' },
-		status: 400,
-		missing: ['flight_number'],
+		invalidFields: ['flight_number'],
 	},
 	{
-		query: 'Flight departure missing',
+		query: 'DL47',
 		tag: 'travel.flight_status',
-		params: { flight_number: 'CA981' },
-		status: 400,
-		missing: ['departure'],
+		params: { flight_number: 'DL47' },
+		expectedParams: { flight_number: 'DL47', departure: '' },
+		result: /DL47/i,
 	},
 	{
 		query: '贵州茅台 利润表',
 		tag: 'finance.fundamental',
-		params: { type: 'income', cn_code: '600519.SH', symbol: '' },
+		params: { type: 'income', cn_code: '600519.SH', symbol: 'AAPL' },
+		expectedParams: { type: 'income', cn_code: '600519.SH', symbol: '' },
 		result: /600519.*利润表/i,
 	},
 	{
@@ -49,35 +50,56 @@ const cases = [
 		query: 'Flight ticket parameters missing',
 		tag: 'travel.flight',
 		params: {},
-		status: 400,
-		missing: ['departure', 'arrival', 'date'],
+		invalidFields: ['departure', 'arrival', 'date'],
 	},
 	{
-		query: 'Overview ticker keys missing',
+		query: 'Apple Inc (AAPL) fundamentals',
 		tag: 'finance.fundamental',
 		params: { type: 'overview' },
-		status: 400,
-		missing: ['symbol', 'cn_code'],
+		expectedParams: { type: 'overview', symbol: '', cn_code: '' },
+		result: /AAPL.*Fundamental/i,
 	},
 	{
 		query: 'Upcoming company earnings',
 		tag: 'finance.calendar',
-		params: { type: 'earnings', symbol: 'AAPL', period: '90d' },
+		params: { type: 'earnings', symbol: 'AAPL', period: '7d' },
+		expectedParams: { type: 'earnings', symbol: 'AAPL', period: '90d' },
 		result: /earnings/i,
+	},
+	{
+		query: 'Esports player region missing',
+		tag: 'gaming.esports',
+		params: { type: 'player', game_name: 'Hide on Bush#KR1' },
+		invalidFields: ['region'],
+	},
+	{
+		query: 'Esports match IDs must include their region',
+		tag: 'gaming.esports',
+		params: { type: 'match_detail', match_id: '7482819248' },
+		invalidFields: ['match_id'],
+	},
+	{
+		query: 'Esports master leaderboard has no division',
+		tag: 'gaming.esports',
+		params: { type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
+		invalidFields: ['division'],
 	},
 ];
 
 function checkItem(entry, item) {
-	if (entry.missing) {
+	if (entry.invalidFields) {
 		assert.equal(typeof item.error, 'string');
-		for (const field of entry.missing) assert(item.error.includes(field), item.error);
-		assert.equal(item.details.http_status, entry.status);
-		assert(item.details.request_id);
+		for (const field of entry.invalidFields) assert(item.error.includes(field), item.error);
+		assert.equal(item.details.http_status, undefined);
+		assert.equal(item.details.request_id, undefined);
 		return;
 	}
 	assert(!item.error, item.error);
 	assert(item.request_id);
-	checkSearchResults({ ...entry, max_results: 1 }, item.results);
+	checkSearchResults(
+		{ ...entry, params: entry.expectedParams ?? entry.params, max_results: 1 },
+		item.results,
+	);
 	if (entry.result) assert.match(item.results[0].title, entry.result);
 }
 
@@ -150,6 +172,11 @@ export function checkCapabilityRequests(requests, tests) {
 				const sent = requests.filter(
 					(r) => r.body?.tag === entry.tag && r.body.query === entry.query,
 				);
+				if (entry.invalidFields) {
+					assert.equal(sent.length, 0, 'Invalid parameters reached the HTTP API');
+					assert.equal(item.request_id, undefined, 'Local validation has an HTTP request ID');
+					continue;
+				}
 				assert.equal(sent.length, 1, 'Expected exactly one HTTP request');
 				const [request] = sent;
 				assert(
@@ -165,10 +192,10 @@ export function checkCapabilityRequests(requests, tests) {
 				assert.deepEqual(request.body, {
 					query: entry.query,
 					tag: entry.tag,
-					params: entry.params,
+					params: entry.expectedParams ?? entry.params,
 					max_results: 1,
 				});
-				assert.equal(request.status, entry.status ?? 200, entry.query);
+				assert.equal(request.status, 200, entry.query);
 			} catch (error) {
 				failures.push(entry.query + ': ' + error.message);
 			}

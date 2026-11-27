@@ -4,8 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Default new AnySearch nodes to version 2, which submits REST parameters as supplied and uses the service's validation and defaults.
-- Keep the validation and parameter defaults from 1.1.4 for workflows saved with node version 1.
+- Keep a single AnySearch node version and apply the same documented parameter validation and defaults in Search and Batch Search.
+- Verify required fields, supported tags and documented parameter formats, choices and conditional constraints against the reviewed AnySearch capability catalog.
 - Preserve HTTP status, request ID, business code and optional error code in n8n error output. Limit HTTP 402 diagnostics to status and request ID.
 - Verify outgoing requests and error diagnostics in real n8n. Run isolated fault tests without an AnySearch account.
 

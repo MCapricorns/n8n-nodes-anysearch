@@ -1,0 +1,127 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { test } from 'node:test';
+import { catalogCoverage } from './e2e/catalog-checks.mjs';
+
+const require = createRequire(import.meta.url);
+const { capabilityParameters } = require('../dist/nodes/AnySearch/capabilityParameters.js');
+const { tags } = require('../dist/nodes/AnySearch/catalog.json');
+const cases = require('./e2e/search-cases.json');
+
+const node = {
+	id: 'parameter-validation',
+	name: 'AnySearch',
+	type: 'n8n-nodes-anysearch.anySearch',
+	typeVersion: 1,
+	position: [0, 0],
+	parameters: {},
+};
+
+function expectedOverrides(tag, params) {
+	if (tag === 'finance.calendar' && params?.type === 'earnings') return { period: '90d' };
+	if (tag === 'finance.fundamental' && params?.type === 'overview') return { cn_code: '' };
+	if (tag === 'finance.fundamental') return { symbol: '' };
+	return {};
+}
+
+function assertFieldError(tag, field, params, query) {
+	assert.throws(() => capabilityParameters(node, tag, params, query), {
+		name: 'NodeOperationError',
+		message: new RegExp(`\\b${field}\\b`, 'i'),
+	});
+}
+
+test('the compiled validator accepts all positive fixtures, covers the catalog, and leaves inputs intact', () => {
+	const outputs = cases.map(({ tag, query, params }) => {
+		const input = Object.freeze(structuredClone(params));
+		const result = capabilityParameters(node, tag, input, query);
+		const expected =
+			params === undefined ? undefined : { ...params, ...expectedOverrides(tag, params) };
+		assert.deepEqual(result, expected, tag);
+		assert.deepEqual(input, params, tag);
+		return { tag, params: result };
+	});
+	const { missing, unexpected } = catalogCoverage(outputs, tags);
+	assert.deepEqual(missing, []);
+	assert.deepEqual(unexpected, []);
+});
+
+test('catalog fields reject objects and arrays unless the node replaces that field with a documented value', () => {
+	const failures = new Set();
+	for (const { tag, query, params } of cases) {
+		const overrides = expectedOverrides(tag, params);
+		for (const field of Object.keys(params ?? {})) {
+			for (const [kind, value] of [
+				['object', Object.freeze({ invalid: true })],
+				['array', Object.freeze(['invalid'])],
+			]) {
+				const input = Object.freeze({ ...params, [field]: value });
+				try {
+					if (Object.hasOwn(overrides, field)) {
+						assert.deepEqual(capabilityParameters(node, tag, input, query), {
+							...params,
+							...overrides,
+						});
+					} else {
+						assertFieldError(tag, field, input, query);
+					}
+					assert.equal(input[field], value);
+				} catch (error) {
+					failures.add(`${tag}.${field} with an ${kind}\n${error.message}`);
+				}
+			}
+		}
+	}
+	assert.deepEqual([...failures], []);
+});
+
+test('documented scalar constraints reject malformed values across capability groups', () => {
+	for (const [tag, field, value] of [
+		['business.trade', 'hs_code', '847'],
+		['energy.electricity', 'metric', 'invalid_metric'],
+		['energy.production', 'frequency', 'fortnightly'],
+		['finance.quote', 'period', '0d'],
+		['finance.screen', 'country', 'ZZ'],
+		['gaming.esports', 'game_name', 'Faker#'],
+		['gaming.esports', 'match_id', 'invalid'],
+		['social_media.social_media', 'type', 'linkedin_feed'],
+		['academic.paper', 'year', '2019-2018'],
+		['academic.person', 'orcid', '0000-0002-1825-0098'],
+		['legal.judicial', 'judgment_date', '2023-02-29'],
+		['travel.flight', 'cabin_class', 'UnknownClass'],
+		['travel.flight_status', 'departure', 'JFKK'],
+	]) {
+		const sample = cases.find(
+			(entry) => entry.tag === tag && Object.hasOwn(entry.params ?? {}, field),
+		);
+		assert(sample, `${tag}.${field} must have a positive fixture`);
+		assertFieldError(tag, field, { ...sample.params, [field]: value }, sample.query);
+	}
+});
+
+test('documented defaults add or replace the fields needed in outbound requests', () => {
+	for (const [tag, query, params, expected] of [
+		[
+			'travel.flight_status',
+			'CA981 flight status',
+			{ flight_number: 'CA981' },
+			{ flight_number: 'CA981', departure: '' },
+		],
+		[
+			'finance.fundamental',
+			'Apple fundamentals',
+			{ type: 'overview' },
+			{ type: 'overview', symbol: '', cn_code: '' },
+		],
+		[
+			'finance.fundamental',
+			'贵州茅台 利润表',
+			{ type: 'income', cn_code: '600519.SH', symbol: ['unused'] },
+			{ type: 'income', cn_code: '600519.SH', symbol: '' },
+		],
+	]) {
+		const input = Object.freeze(structuredClone(params));
+		assert.deepEqual(capabilityParameters(node, tag, input, query), expected, tag);
+		assert.deepEqual(input, params, tag);
+	}
+});

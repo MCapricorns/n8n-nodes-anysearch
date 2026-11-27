@@ -133,7 +133,7 @@ function add(name, parameters, credential, check) {
 		id: name,
 		name,
 		type: 'n8n-nodes-anysearch.anySearch',
-		typeVersion: 2,
+		typeVersion: 1,
 		position: [400, tests.length * 120],
 		parameters,
 		onError: 'continueRegularOutput',
@@ -233,14 +233,11 @@ function addStandardTests() {
 	);
 	add(
 		'Invalid URL',
-		{ resource: 'extract', operation: 'extract', url: ' https://example.com ' },
+		{ resource: 'extract', operation: 'extract', url: 'example.com' },
 		'valid',
 		(items) => {
-			assert.equal(items[0].json.error, 'URL is invalid.');
-			assert.equal(items[0].json.details.http_status, 400);
-			assert.equal(items[0].json.details.code, -1);
-			assert.equal(items[0].json.details.error_code, 'invalid_extract_url');
-			assert(items[0].json.details.request_id);
+			assert.match(items[0].json.error, /absolute public HTTP\(S\) URL/i);
+			assert.deepEqual(items[0].json.details, {});
 		},
 	);
 	add(
@@ -249,6 +246,7 @@ function addStandardTests() {
 		'valid',
 		(items) => {
 			assert.match(items[0].json.error, /embedded credentials/);
+			assert.deepEqual(items[0].json.details, {});
 		},
 	);
 	add(
@@ -276,9 +274,8 @@ function addStandardTests() {
 		(items) => {
 			assert.equal(items.length, 3);
 			assert(items[0].json.results?.length);
-			assert.equal(items[1].json.error, 'Query is required.');
-			assert.equal(items[1].json.details.http_status, 400);
-			assert(items[1].json.details.request_id);
+			assert.match(items[1].json.error, /query.+(?:required|non-empty)/i);
+			assert.deepEqual(items[1].json.details, { query: '', query_index: 1 });
 			assert(items[2].json.results?.length);
 			assert.deepEqual(
 				items.map((item) => item.json.query_index ?? item.json.details.query_index),
@@ -365,7 +362,7 @@ function addStandardTests() {
 			id: 'tool',
 			name: 'Search Tool',
 			type: 'n8n-nodes-anysearch.anySearchTool',
-			typeVersion: 2,
+			typeVersion: 1,
 			position: [1200, 200],
 			parameters: {
 				resource: 'search',
@@ -401,7 +398,7 @@ function addStandardTests() {
 			id: 'item-search',
 			name: 'Item Search',
 			type: 'n8n-nodes-anysearch.anySearch',
-			typeVersion: 2,
+			typeVersion: 1,
 			position: [1900, 0],
 			parameters: {
 				resource: 'search',
@@ -464,7 +461,9 @@ function addStandardTests() {
 }
 
 async function addCatalogTests(credential) {
-	const { tags } = JSON.parse(await fs.readFile(path.join(root, 'test/e2e/catalog.json'), 'utf8'));
+	const { tags } = JSON.parse(
+		await fs.readFile(path.join(root, 'nodes/AnySearch/catalog.json'), 'utf8'),
+	);
 	const reviewedDomains = [...new Set(Object.keys(tags).map((tag) => tag.split('.')[0]))];
 	add('Domains', { resource: 'capability', operation: 'getDomains' }, credential, (items) => {
 		assert(items.length > 0);
@@ -753,6 +752,15 @@ async function runLiveWorkflows() {
 			}
 		});
 	if (!capabilityOnly) {
+		assert(
+			!summary.requests.some(
+				({ body }) =>
+					body?.query === '' ||
+					body?.url === 'example.com' ||
+					body?.url === 'https://user:password@example.com',
+			),
+			'Locally invalid query or URL reached AnySearch',
+		);
 		const authenticatedId = summary.tests.find((test) => test.name === 'Authenticated Search')
 			?.results?.[0]?.request_id;
 		const authenticated = summary.requests.find(

@@ -19,9 +19,9 @@ request fields. Get Sub-Domains repeats `domain` for each selection, and Extract
 The node also uses the live `GET /v1/domains` endpoint to populate the domain picker and test
 credentials. [AnySearch REST reference](https://www.anysearch.com/docs/api-endpoints)
 
-Newly added nodes use version 2. AnySearch validates its REST fields and applies the service
-defaults. Saved version 1 nodes keep their existing local validation, parameter defaults,
-and workflow configuration.
+AnySearch uses a single n8n node version. Search and Batch Search use the same validated
+parameter definitions from the reviewed capability catalog. Workflows created from the temporary
+version 2 on GitHub can set the AnySearch node's `typeVersion` to `1` to edit it in n8n.
 
 | REST endpoint | Required | Optional |
 | --- | --- | --- |
@@ -30,8 +30,10 @@ and workflow configuration.
 | `POST /v1/extract` | One public absolute HTTP(S) `url` in the JSON body |  |
 
 Both POST endpoints use `Content-Type: application/json`. The Extract API limits its request
-body to 16 KiB. Batch Search calls the Search endpoint once per entry. The node checks the batch
-array length, parses JSON editor input, and blocks extraction URLs containing credentials locally.
+body to 16 KiB. Batch Search calls the Search endpoint once per valid entry. The node validates
+required fields, JSON, documented parameter values and formats, the extraction body size and the
+URL before sending requests. Local input errors name the affected field. AnySearch checks whether
+the extraction target is publicly accessible.
 [Search](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains) · [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract)
 
 The package has no bundled runtime dependencies. n8n supplies the n8n-workflow peer dependency.
@@ -104,18 +106,18 @@ and an empty results array. Successful items include the service's request_id wh
 2. Use **Capability > Get Sub-Domains** to read the current tags and parameter definitions.
 3. Copy the selected tag and supply its parameters in **Search**.
 
-For example, `code.doc` uses `{"library":"react"}`. In node version 2, Search and Batch Search
-send the supplied capability parameters to AnySearch for validation and defaults.
+For example, `code.doc` uses `{"library":"react"}`. Search and Batch Search apply documented
+capability constraints before calling AnySearch.
 
 | Capability | Parameters |
 | --- | --- |
-| `travel.flight_status` | Supply `flight_number` and `departure`. Use `departure: ""` if the airport is unknown. |
-| `finance.fundamental` | Supply `type`, `symbol` and `cn_code`. For `overview`, use `cn_code: ""`. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, use `symbol: ""`. |
-| `finance.calendar` | For `type: "earnings"`, supply `period: "90d"` and the company's `symbol` or `cn_code`, as specified in discovery. |
+| `travel.flight_status` | Supply `flight_number`. The node sends `departure: ""` if no airport is supplied. |
+| `finance.fundamental` | For `overview`, the node sends `cn_code: ""`. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply a ticker string such as `"600519.SH"`. The node sends `symbol: ""`. |
+| `finance.calendar` | For `type: "earnings"`, the node sends `period: "90d"`. Supply a `symbol` or `cn_code` to select a company. |
+| `gaming.esports` | Supply the fields required by the selected `type`. Use a platform-prefixed numeric `match_id` for `match_detail` and a valid `division` for divided leaderboard tiers. |
 
-Read each field's required flag and description together. When upgrading a node from version 1
-to version 2, supply any values that version 1 inserted or overrode. The reviewed catalog records
-the official wording and required flag for each field. [Parameter definitions](test/e2e/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
+Read each field's required flag and description together. The reviewed catalog records the official
+wording and required flag for each field. [Parameter definitions](nodes/AnySearch/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
 
 ## Batch search
 

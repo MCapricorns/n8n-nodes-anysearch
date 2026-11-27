@@ -4,7 +4,6 @@ import type {
 	ILoadOptionsFunctions,
 	INode,
 	INodeExecutionData,
-	INodeProperties,
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
@@ -18,6 +17,7 @@ import { capabilityParameters, missingParameterMessage } from './capabilityParam
 const API_BASE_URL = 'https://api.anysearch.com';
 const CREDENTIAL_NAME = 'anySearchApi';
 const REQUEST_TIMEOUT = 60_000;
+const EXTRACT_BODY_LIMIT = 16 * 1024;
 const REDDIT_ORIGIN = 'https://www.reddit.com';
 const CAPABILITY_TAG_PATTERN = /^[^.\s]+\.[^.\s]+$/;
 const sanitizedErrors = new WeakSet<Error>();
@@ -325,7 +325,7 @@ function readTagParameters(node: INode, value: IDataObject[string]): IDataObject
 	}
 }
 
-function searchBodyV1(node: INode, input: IDataObject | undefined): IDataObject {
+function searchBody(node: INode, input: IDataObject | undefined): IDataObject {
 	if (!input || typeof input.query !== 'string' || input.query.trim() === '') {
 		throw new NodeOperationError(node, 'Query must be a non-empty string');
 	}
@@ -337,7 +337,8 @@ function searchBodyV1(node: INode, input: IDataObject | undefined): IDataObject 
 			'Search accepts query, max_results, tag, zone, language, format, and params only',
 		);
 	}
-	const body: IDataObject = { query: input.query.trim() };
+	const query = input.query.trim();
+	const body: IDataObject = { query };
 	if (input.max_results !== undefined) {
 		const max = input.max_results;
 		if (typeof max !== 'number' || !Number.isInteger(max) || max < 1 || max > 10) {
@@ -362,23 +363,16 @@ function searchBodyV1(node: INode, input: IDataObject | undefined): IDataObject 
 	}
 	const decoded = readTagParameters(node, input.params);
 	const params = objectValue(decoded);
-	if (input.params !== undefined && input.params !== '' && !params) {
+	if (
+		input.params !== undefined &&
+		input.params !== '' &&
+		(!params || Object.prototype.toString.call(params) !== '[object Object]')
+	) {
 		throw new NodeOperationError(node, 'Tag Parameters must be a JSON object');
 	}
-	const tagParams = capabilityParameters(node, String(body.tag ?? ''), params);
+	const tagParams = capabilityParameters(node, String(body.tag ?? ''), params, query);
 	if (tagParams !== undefined) body.params = tagParams;
 	return body;
-}
-
-function editorSearchBody(node: INode, input: IDataObject): IDataObject {
-	if (node.typeVersion === 1) return searchBodyV1(node, input);
-	const { zone, params, ...fields } = input;
-	const tagParameters = readTagParameters(node, params);
-	return {
-		...fields,
-		...(zone === undefined || zone === '' ? {} : { zone }),
-		...(tagParameters === undefined ? {} : { params: tagParameters }),
-	};
 }
 
 function readDomains(node: INode, value: unknown): string[] {
@@ -387,16 +381,14 @@ function readDomains(node: INode, value: unknown): string[] {
 	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) {
 		throw new NodeOperationError(node, 'Domain Names or IDs must contain strings');
 	}
-	if (node.typeVersion !== 1 && typeof value !== 'string') return raw;
 	const domains = raw.map((entry) => entry.trim()).filter(Boolean);
-	if (node.typeVersion !== 1) return domains;
 	if (!domains.length) throw new NodeOperationError(node, 'Domain Names or IDs must not be empty');
 	return [...new Set(domains)];
 }
 
 async function search(
 	this: IExecuteFunctions,
-	body: IDataObject | string,
+	body: IDataObject,
 	itemIndex: number,
 ): Promise<IDataObject> {
 	const envelope = await anySearchRequest.call(
@@ -463,7 +455,7 @@ async function searchOperation(
 ): Promise<INodeExecutionData[]> {
 	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
 	const { maxResults, simplify, ...fields } = options;
-	const body = editorSearchBody(this.getNode(), {
+	const body = searchBody(this.getNode(), {
 		...fields,
 		query: this.getNodeParameter('query', itemIndex, ''),
 		...(maxResults === undefined ? {} : { max_results: maxResults }),
@@ -498,13 +490,7 @@ async function batchSearchOperation(
 			const object = objectValue(query);
 			const identity = { query: object?.query ?? '', query_index: queryIndex };
 			try {
-				// n8n's HTTP helper drops empty object and scalar request bodies.
-				const body =
-					node.typeVersion === 1
-						? searchBodyV1(node, object)
-						: object && Object.keys(object).length > 0
-							? object
-							: (JSON.stringify(query) ?? 'null');
+				const body = searchBody(node, object);
 				const data = await search.call(this, body, itemIndex);
 				return { json: { ...identity, ...data }, pairedItem: { item: itemIndex } };
 			} catch (error) {
@@ -514,43 +500,65 @@ async function batchSearchOperation(
 	);
 }
 
+function isNonPublicHost(hostname: string): boolean {
+	const host = hostname.toLowerCase().replace(/\.$/, '');
+	if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+	if (
+		/^\[(?:::|::1)\]$/.test(host) ||
+		/^\[(?:f[cd][\da-f]{2}|fe[89ab][\da-f]|ff[\da-f]{2}):/.test(host)
+	) {
+		return true;
+	}
+	const mapped = /^\[::ffff:([\da-f]{1,4}):[\da-f]{1,4}\]$/.exec(host);
+	const ipv4 = /^([\d]{1,3})\.([\d]{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
+	if (!mapped && !ipv4) return false;
+	const pair = mapped ? Number.parseInt(mapped[1], 16) : 0;
+	const first = ipv4 ? Number(ipv4[1]) : pair >>> 8;
+	const second = ipv4 ? Number(ipv4[2]) : pair & 255;
+	return (
+		first === 0 ||
+		first === 10 ||
+		first === 127 ||
+		first >= 224 ||
+		(first === 100 && second >= 64 && second <= 127) ||
+		(first === 169 && second === 254) ||
+		(first === 172 && second >= 16 && second <= 31) ||
+		(first === 192 && second === 168)
+	);
+}
+
 async function extractOperation(
 	this: IExecuteFunctions,
 	itemIndex: number,
 ): Promise<INodeExecutionData[]> {
 	const node = this.getNode();
 	const value = this.getNodeParameter('url', itemIndex, '');
-	const legacy = node.typeVersion === 1;
-	let url: URL | undefined;
-	let hasCredentials = false;
-	if (typeof value === 'string') {
-		try {
-			url = new URL(legacy ? value.trim() : value);
-			hasCredentials = Boolean(url.username || url.password);
-		} catch {
-			// Even malformed URL authorities can contain credentials.
-			const candidate = value.replace(/[\t\r\n]/g, '').replace(/^[\s\p{Cc}]+/u, '');
-			hasCredentials = /^(?:[a-z][a-z\d+.-]*:[/\\]+|https?:|[/\\]{2,})[^/\\?#]+@/i.test(candidate);
-		}
-	}
-	if (legacy && !url) {
+	const submitted = typeof value === 'string' ? value.trim() : '';
+	if (!/^https?:\/\/[^/]/i.test(submitted) || /[\s\p{Cc}\\]/u.test(submitted)) {
 		throw new NodeOperationError(node, 'URL must be an absolute public HTTP(S) URL');
 	}
-	if (legacy && (hasCredentials || (url?.protocol !== 'http:' && url?.protocol !== 'https:'))) {
-		throw new NodeOperationError(
-			node,
-			'URL must use HTTP(S) and must not contain embedded credentials',
-		);
+	let url: URL;
+	try {
+		url = new URL(submitted);
+	} catch {
+		throw new NodeOperationError(node, 'URL must be an absolute public HTTP(S) URL');
 	}
-	if (hasCredentials) {
+	if (url.username || url.password) {
 		throw new NodeOperationError(node, 'URL must not contain embedded credentials');
+	}
+	if (isNonPublicHost(url.hostname)) {
+		throw new NodeOperationError(node, 'URL must use a public host');
+	}
+	const body = { url: submitted };
+	if (Buffer.byteLength(JSON.stringify(body), 'utf8') > EXTRACT_BODY_LIMIT) {
+		throw new NodeOperationError(node, 'Extract request body must be at most 16 KiB');
 	}
 	const envelope = await anySearchRequest.call(
 		this,
 		{
 			method: 'POST',
 			url: API_BASE_URL + '/v1/extract',
-			body: { url: legacy && typeof value === 'string' ? value.trim() : value },
+			body,
 		},
 		itemIndex,
 	);
@@ -608,7 +616,7 @@ async function fetchDomains(
 	if (selected) {
 		const searchParams = new URLSearchParams();
 		for (const domain of selected) searchParams.append('domain', domain);
-		endpoint = selected.length ? '/v1/sub-domains?' + searchParams.toString() : '/v1/sub-domains';
+		endpoint = '/v1/sub-domains?' + searchParams.toString();
 	}
 	const envelope = await anySearchRequest.call(
 		this,
@@ -664,15 +672,6 @@ async function capabilityOperation(
 	}));
 }
 
-function requiredInV1(property: INodeProperties): INodeProperties[] {
-	// In v2, missing REST fields must reach the service for a request ID and official error.
-	return [1, 2].map((version) => ({
-		...property,
-		required: version === 1,
-		displayOptions: { show: { ...property.displayOptions?.show, '@version': [version] } },
-	}));
-}
-
 export class AnySearch implements INodeType {
 	methods = {
 		loadOptions: {
@@ -692,8 +691,7 @@ export class AnySearch implements INodeType {
 		name: 'anySearch',
 		icon: { light: 'file:anysearch.svg', dark: 'file:anysearch.dark.svg' },
 		group: ['transform'],
-		version: [1, 2],
-		defaultVersion: 2,
+		version: 1,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
 		description:
 			'Search the web with unified or vertical capability tags, and extract clean page content, via AnySearch',
@@ -772,10 +770,11 @@ export class AnySearch implements INodeType {
 				description:
 					'JSON array of 1–5 objects with query and optional tag, params, max_results, zone, language, and format. Each query returns a result or an error in input order.',
 			},
-			...requiredInV1({
+			{
 				displayName: 'Query',
 				name: 'query',
 				type: 'string',
+				required: true,
 				displayOptions: {
 					show: {
 						resource: ['search'],
@@ -785,7 +784,7 @@ export class AnySearch implements INodeType {
 				default: '',
 				placeholder: 'e.g. Go 1.26 release notes',
 				description: 'AnySearch requires a non-empty search query',
-			}),
+			},
 			{
 				displayName: 'Options',
 				name: 'options',
@@ -905,10 +904,11 @@ export class AnySearch implements INodeType {
 				],
 				default: 'extract',
 			},
-			...requiredInV1({
+			{
 				displayName: 'URL',
 				name: 'url',
 				type: 'string',
+				required: true,
 				displayOptions: {
 					show: {
 						resource: ['extract'],
@@ -918,7 +918,7 @@ export class AnySearch implements INodeType {
 				default: '',
 				placeholder: 'https://example.com/article',
 				description: 'AnySearch requires a public absolute HTTP(S) URL',
-			}),
+			},
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -945,10 +945,11 @@ export class AnySearch implements INodeType {
 				],
 				default: 'getDomains',
 			},
-			...requiredInV1({
+			{
 				displayName: 'Domain Names or IDs',
 				name: 'domains',
 				type: 'multiOptions',
+				required: true,
 				typeOptions: {
 					loadOptionsMethod: 'getDomains',
 				},
@@ -961,7 +962,7 @@ export class AnySearch implements INodeType {
 				default: [],
 				description:
 					'AnySearch requires at least one domain, e.g. code or finance. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-			}),
+			},
 		],
 	};
 
