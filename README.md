@@ -44,7 +44,7 @@ Feedback was removed in 1.1.1. Remove saved Feedback steps when migrating older 
 
 ### Capability catalog
 
-A vertical search needs a capability tag and the parameters defined for it. The node bundles a copy of the AnySearch capability catalog, read from `GET /v1/sub-domains` and reviewed on 2026-11-27: 17 domains, 40 capability tags, and 206 tag-specific fields, 25 of them required.
+A vertical search needs a capability tag and the parameters defined for it. The node bundles a copy of the AnySearch capability catalog, read from `GET /v1/sub-domains` and reviewed on 2026-11-27: 17 domains, 40 capability tags, and 206 tag-specific fields, 26 of them required.
 
 | Domain         | Capability tags                                               |
 | -------------- | ------------------------------------------------------------- |
@@ -80,6 +80,7 @@ A tag is written as `domain.tag`, for example `finance.quote` or `security.threa
 | `finance.screen`        | `market`, `type`               |
 | `gaming.esports`        | `type`                         |
 | `health.drug`           | `type`                         |
+| `resource.image`        | `type`                         |
 | `security.asset`        | `target`                       |
 | `security.malware`      | `ioc`                          |
 | `security.threat_intel` | `target`                       |
@@ -105,6 +106,7 @@ A rejected request stops in n8n with the name of the field or the stated conditi
 - `finance.news` accepts the types `general`, `stock`, `transcript`, and `long_form`. `flash` and `announcement` are no longer catalog types.
 - The node no longer supplies values that a workflow did not contain: an empty `departure` for flight status, an empty unused ticker for fundamentals, and `period: "90d"` for earnings calendars. Add them to **Tag Parameters** when a request needs them.
 - `gaming.esports` requires only `type`. It gains `count` for mastery, and `gaming.store` gains `language` and `region`.
+- `resource.image` requires `type`, either `asset` or `discover`. The catalog gains the tag `resource.video`.
 - `academic.paper` accepts a DOI lookup as a bare DOI, a `doi:` prefix, or an `http(s)://doi.org/` URL.
 - The node keeps `typeVersion: 1`. To edit workflows saved with the temporary version 2, set the AnySearch node's `typeVersion` to `1`.
 - Batch Search needs a list of 1–5 query objects, and each request is validated before it is sent. Unsupported `zone` and `format` values are rejected.

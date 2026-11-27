@@ -1,7 +1,7 @@
 {
   "reviewed": "2026-11-27",
   "source": "https://api.anysearch.com/v1/sub-domains",
-  "topology_version": 24,
+  "topology_version": 25,
   "tags": {
     "academic.citation": {
       "filter": {
@@ -795,7 +795,7 @@
     },
     "resource.image": {
       "type": {
-        "required": false,
+        "required": true,
         "description": "Enum values: asset, discover. Use asset to find ready-to-use material for article images, PPT slides, covers, posters, backgrounds, or design files (photos, illustrations, vector graphics); prefer stock libraries, then fall back to the open web if needed. Use discover to search, view, and compare images by text (object, scene, person, place, work, or event); for general browsing, start with stock libraries; for a specific object or event, prioritize the open web. Choose asset when the user explicitly needs ready-to-use assets; choose discover when the main goal is to find images related to a described person, event, or thing."
       }
     },

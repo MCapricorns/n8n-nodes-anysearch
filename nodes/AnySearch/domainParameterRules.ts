@@ -90,7 +90,7 @@ export const domainParameterRules: CapabilityRuleMap = {
 		},
 	},
 	'environment.aqi': { fields: { location: aqiLocation } },
-	// "枚举值：asset、discover" (enum values)
+	// "Enum values: asset, discover."
 	'resource.image': { fields: { type: choice('asset', 'discover') } },
 	'health.drug': {
 		fields: { type: choice('name', 'ndc', 'upc') },
