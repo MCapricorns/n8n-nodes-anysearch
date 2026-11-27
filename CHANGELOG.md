@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.1.5 (2026-11-27)
 
 - Keep a single AnySearch node version and apply the same documented parameter validation and defaults in Search and Batch Search.
 - Verify required fields, supported tags and documented parameter formats, choices and conditional constraints against the reviewed AnySearch capability catalog.
