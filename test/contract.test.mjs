@@ -201,10 +201,9 @@ test('Search and Batch Search reject invalid REST request parameters locally', a
 		...[0, 11, 1.5, '2', null].map((max_results) => [{ query, max_results }, /max.results/i]),
 		[{ query, tag: 'finance' }, /tag/i],
 		[{ query, tag: 'finance.unknown' }, /tag/i],
-		[{ query, zone: 'eu' }, /zone/i],
+		...['eu', ' intl ', ' '].map((zone) => [{ query, zone }, /zone/i]),
 		[{ query, language: 42 }, /language/i],
-		[{ query, format: 'html' }, /format/i],
-		[{ query, params: 'not json' }, /valid JSON/i],
+		...['html', ' json ', ' '].map((format) => [{ query, format }, /format/i]),
 		[{ query, params: [1] }, /json object/i],
 		[{ query, params: new Date('2026-11-27') }, /json object/i],
 		[{ query, params: null }, /json object/i],
@@ -223,6 +222,52 @@ test('Search and Batch Search reject invalid REST request parameters locally', a
 		const { json } = batch.output[0][0];
 		assert.match(json.error, message);
 		assert.equal(json.details.request_id, undefined);
+	}
+});
+
+test('only the single Search editor decodes JSON text for tag parameters', async () => {
+	const query = 'React documentation';
+	const tag = 'code.doc';
+	const malformed = await runCase({ parameters: { query, options: { tag, params: 'not json' } } });
+	assert.match(malformed.message, /valid JSON/i);
+	assert.equal(malformed.requests.length, 0);
+	for (const params of ['{"library":"react"}', '']) {
+		const run = await runCase({
+			parameters: { operation: 'batchSearch', queries: [{ query, tag, params }] },
+		});
+		assert.match(run.output[0][0].json.error, /JSON object/i);
+		assert.equal(run.requests.length, 0);
+	}
+});
+
+test('both search operations omit params when there are no tag parameters to send', async () => {
+	const query = 'general search';
+	for (const fields of [
+		{},
+		{ tag: 'general.general' },
+		{ tag: 'film.torrent' },
+		{ tag: 'code.snippet' },
+	]) {
+		for (const parameters of [
+			{ query, options: { ...fields, params: '{}' } },
+			{ operation: 'batchSearch', queries: [{ query, ...fields, params: {} }] },
+		]) {
+			const run = await runCase({ parameters });
+			assert.equal(run.outcome, 'returned', run.message);
+			assert.deepEqual(run.requests[0].body, { query, ...fields });
+		}
+	}
+});
+
+test('an unset Batch Search query list never submits an example search', async () => {
+	const { properties } = new AnySearch().description;
+	const field = properties.find(({ name }) => name === 'queries');
+	assert.equal(field.required, true);
+	assert.equal(field.default, '');
+	for (const queries of [undefined, null, '', '   ']) {
+		const run = await runCase({ parameters: { operation: 'batchSearch', queries } });
+		assert.match(run.message, /between 1 and 5 search objects/i);
+		assert.equal(run.requests.length, 0);
 	}
 });
 
@@ -632,16 +677,20 @@ for (const results of [
 	});
 }
 
-test('search trims text fields and leaves omitted options to AnySearch defaults', async () => {
+test('search trims the query and uses AnySearch defaults for empty optional strings', async () => {
 	const query = 'a search query';
 	const input = ` ${query} `;
-	const minimal = await runCase({ parameters: { query: input, options: { zone: '' } } });
-	assert.deepEqual(minimal.requests[0].body, { query });
+	const empty = { zone: '', tag: '', format: '', language: '' };
+	const single = await runCase({ parameters: { query: input, options: empty } });
+	const batch = await runCase({
+		parameters: { operation: 'batchSearch', queries: [{ query: input, ...empty }] },
+	});
+	for (const run of [single, batch]) assert.deepEqual(run.requests[0].body, { query });
 	for (const maxResults of [1, 10]) {
 		const r = await runCase({
 			parameters: {
 				query: input,
-				options: { maxResults, zone: ' intl ', format: ' json ', language: ' en ' },
+				options: { maxResults, zone: 'intl', format: 'json', language: 'en' },
 			},
 		});
 		assert.deepEqual(r.requests[0].body, {
@@ -832,9 +881,20 @@ test('both search operations apply shared capability validation and compatibilit
 			{ type: ' balance ', cn_code: '600519.SH', symbol: 'AAPL' },
 			{ type: 'balance', symbol: '' },
 		],
-		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }, { period: '90d' }],
+		['finance.calendar', { type: 'earnings', symbol: 'AAPL' }, { period: '90d' }],
+		['finance.calendar', { type: 'earnings', symbol: 'AAPL', period: '7d' }, /\bperiod\b.*90d/],
+		['finance.quote', { type: 'stock', symbol: 'AAPL', cn_code: '' }, {}],
+		['finance.quote', { type: 'stock', symbol: '', cn_code: '' }, {}],
+		['finance.quote', { type: 'index', cn_code: '399300.SZ', symbol: '' }, {}],
+		['finance.quote', { type: 'forex', cn_code: 'USDCNH.FXCM', symbol: '' }, {}],
 		['finance.quote', { type: 'forex', symbol: 'EURUSD' }, {}],
 		['gaming.esports', { type: 'match_detail', match_id: 'EUW1_6723541890' }, {}],
+		[
+			'gaming.esports',
+			{ type: 'champion', region: 'unused', queue: 'unused', tier: 'unused', division: 'unused' },
+			{},
+		],
+		['gaming.esports', { type: 'leaderboard', region: 'unused' }, /\bregion\b/],
 		['academic.citation', { id: '33817056', id_type: 'pmid' }, {}],
 		['academic.citation', { id: '06101801781-06180334099', op: 'citation' }, {}],
 		['code.doc', {}, /\blibrary\b/],
@@ -847,6 +907,7 @@ test('both search operations apply shared capability validation and compatibilit
 		['travel.flight_status', { flight_number: 'CA981', date: '2026-02-29' }, /\bdate\b/],
 		['finance.quote', { type: 'stock', symbol: 'AAPL', period: '0d' }, /\bperiod\b/],
 		['finance.quote', { type: 'crypto' }, /\bsymbol\b/],
+		['finance.quote', { type: 'crypto', symbol: '' }, /\bsymbol\b/],
 		['finance.quote', { type: 'forex', symbol: 'EUR/USD' }, /\bsymbol\b/],
 		['finance.news', { type: 'flash', news_src: 'future_source' }, /\bnews_src\b/],
 		['gaming.esports', { type: 'player', game_name: 'Hide on Bush#KR1' }, /\bregion\b/],
@@ -859,6 +920,13 @@ test('both search operations apply shared capability validation and compatibilit
 		['academic.citation', { op: 'citation', id: '10.1038/example' }, /\bOCI\b/],
 		['academic.paper', { year: '2026-2020' }, /\byear\b/],
 		['academic.paper', { sort: 'date' }, /\bsort\b/],
+		['academic.citation', { id: '33817056', type: 'cucumber' }, /\btype\b/],
+		['academic.citation', { id: '33817056', sort: 'creation:sideways' }, /\bsort\b/],
+		['academic.dataset', { year_from: 2020, year_to: '2025' }, {}],
+		['academic.dataset', { year_from: 2020.5 }, /\byear_from\b/],
+		['legal.legislation', { jurisdiction: 'US', collection: 'CFR', title: 12 }, {}],
+		['legal.legislation', { title: 12 }, {}],
+		['legal.legislation', { date_from: '2025-01-01', date_to: '2024-01-01' }, {}],
 		['academic.person', { orcid: '0000-0002-1825-0098' }, /\borcid\b/],
 		['security.intel', { ioc: '???' }, /\bioc\b/],
 		['security.intel', { ioc: '-' }, /\bioc\b/],
@@ -882,15 +950,16 @@ test('both search operations apply shared capability validation and compatibilit
 		['security.intel', { ioc: Buffer.alloc(48, 255).toString('base64') }, {}],
 		['security.intel', { ioc: Buffer.alloc(48, 255).toString('base64url') }, {}],
 		['security.scan', { ioc: 'https://data_node.example.com/a' }, {}],
+		['security.scan', { ioc: '例子。测试' }, {}],
 		[
 			'travel.flight',
 			{ departure: 'PEK', arrival: 'SFO', date: '01/03/2028', return_date: '2028-02-29' },
-			/\breturn_date\b/,
+			{},
 		],
 		[
 			'travel.flight',
 			{ departure: 'PEK', arrival: 'SFO', date: '2027-03-01', return_date: '28/02/2027' },
-			/\breturn_date\b/,
+			{},
 		],
 		[
 			'travel.flight',

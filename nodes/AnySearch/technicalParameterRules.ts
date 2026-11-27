@@ -6,10 +6,6 @@ const flightCurrency = format(/^[a-z]{3}$/i, 'a three-letter currency code such 
 const count = integer(0);
 const flightDate = dateValue('DD/MM/YYYY', 'YYYY-MM-DD');
 
-function flightDateKey(value: string): string {
-	return value.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
-}
-
 const dnsName =
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/i;
 const urlScheme = /^[a-z][a-z\d+.-]*:\/\//i;
@@ -41,7 +37,7 @@ function isIPv4(value: string): boolean {
 function isNetworkIndicator(value: string): boolean {
 	if (isIPv4(value)) return true;
 	const hasScheme = urlScheme.test(value);
-	const isHostName = value.includes('.') && !/[\s:/\\?#@%]/.test(value);
+	const isHostName = !/[\s:/\\?#@%]/.test(value);
 	const isIPv6Candidate = ipv6Candidate.test(value);
 	if (!hasScheme && !isHostName && !isIPv6Candidate) return false;
 	try {
@@ -171,17 +167,6 @@ export const technicalParameterRules: CapabilityRuleMap = {
 			infants: count,
 			return_date: flightDate,
 			type: choice('FlightSearch'),
-		},
-		check: ({ date, return_date }) => {
-			if (
-				typeof date === 'string' &&
-				typeof return_date === 'string' &&
-				return_date &&
-				flightDateKey(return_date) < flightDateKey(date)
-			) {
-				return 'return_date must be on or after date.';
-			}
-			return undefined;
 		},
 	},
 	'travel.flight_status': {

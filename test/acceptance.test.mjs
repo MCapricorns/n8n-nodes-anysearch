@@ -93,12 +93,12 @@ test('a complete expected request can include documented normalization and no ex
 	const input = {
 		query: 'AAPL fiscal calendar',
 		tag: 'finance.calendar',
-		params: { type: 'earnings', period: '7d' },
+		params: { type: 'earnings' },
 	};
 	const { records, requests } = matrix([input], [[{ title: 'AAPL earnings calendar', url: '' }]]);
 	records[0].expectedParams = { type: 'earnings', period: '90d' };
 	requests[0].body = { ...input, params: records[0].expectedParams };
-	assert.equal(checkMatrix(records, requests, domains).semanticChecks, 1);
+	assert.equal(checkMatrix(records, requests, domains).unverified.length, 1);
 	requests[0].body = { ...input, params: { ...records[0].expectedParams, cn_code: '600519.SH' } };
 	assert.throws(() => checkMatrix(records, requests, domains), /Outgoing search body/);
 	assert.throws(() => checkMatrix([], [], domains), /matrix is empty/);
@@ -959,6 +959,82 @@ test('catalog distinguishes unverified filters, source mismatches and nonempty-o
 	assert.deepEqual(
 		report.failures.map((item) => [item.index, item.kind]),
 		[[2, 'resultMismatch']],
+	);
+});
+
+test('record identity alone does not verify additional requested filters', () => {
+	const doi = '10.1038/s41586-021-03819-2';
+	for (const [tag, params, result] of [
+		['academic.citation', { id: doi, min_citations: '100' }, { url: 'https://doi.org/' + doi }],
+		[
+			'academic.person',
+			{ orcid: '0000-0002-1825-0097', affiliations: 'example university' },
+			{ url: 'https://orcid.org/0000-0002-1825-0097' },
+		],
+		[
+			'legal.legislation',
+			{ jurisdiction: 'US', collection: 'CFR', title: 40, agency: 'epa' },
+			{ url: 'https://www.ecfr.gov/current/title-40/chapter-I/part-50/section-50.1' },
+		],
+		[
+			'legal.judicial',
+			{ jurisdiction: 'ECHR', respondent: 'FRA', doc_type: 'JUDGMENT', legal_basis: 'Article 6' },
+			{
+				url: 'https://hudoc.echr.coe.int/eng?i=001-123456',
+				title: 'Case X v. France',
+				content: 'JUDGMENT',
+			},
+		],
+		[
+			'social_media.social_media',
+			{ type: 'weibo_hot', region: 'Beijing', keyword: 'Python' },
+			{ url: 'https://s.weibo.com/top/summary', title: 'Top searches' },
+		],
+		[
+			'finance.calendar',
+			{ type: 'earnings', symbol: 'AAPL', period: '90d' },
+			{ url: 'https://example.com/record', title: 'AAPL earnings (1900-01-01)' },
+		],
+		[
+			'ip.global',
+			{ type: 'GlobalPatent', applicant: 'Huawei', date_start: '2026', ipc: 'H01L' },
+			{
+				title: 'Example patent',
+				content: '{"applicant":"Huawei","publicationYear":2020,"ipc":"G06N"}',
+			},
+		],
+	]) {
+		assert.equal(assessSearchResults({ tag, params }, [result]).status, 'unverified');
+	}
+	const dataset = {
+		tag: 'academic.dataset',
+		params: { client_id: 'cern.zenodo', year_from: 2020, year_to: '2025' },
+	};
+	const result = { url: 'https://zenodo.org/records/123' };
+	assert.equal(assessSearchResults(dataset, [result]).status, 'unverified');
+	assert.equal(
+		assessSearchResults(dataset, [{ ...result, publicationYear: [2023] }]).status,
+		'unverified',
+	);
+	assert.equal(
+		assessSearchResults(dataset, [{ ...result, publicationYear: 2023 }]).status,
+		'verified',
+	);
+	assert.equal(
+		assessSearchResults(dataset, [{ ...result, publicationYear: 1900 }]).status,
+		'mismatch',
+	);
+	assert.equal(
+		assessSearchResults(dataset, [
+			{ ...result, publicationYear: 1900, content: '{"publicationYear":2023}' },
+		]).status,
+		'mismatch',
+	);
+	assert.equal(
+		assessSearchResults({ ...dataset, params: { ...dataset.params, resource_type: 'Dataset' } }, [
+			{ ...result, publicationYear: 1900 },
+		]).status,
+		'mismatch',
 	);
 });
 

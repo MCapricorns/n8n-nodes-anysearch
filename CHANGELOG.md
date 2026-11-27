@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.7 (2026-11-27)
+
+- Require a Batch Search query list and validate each REST request object before sending it. Omit empty tag parameters and reject unsupported region and response format values.
+- Enforce the earnings calendar period, apply esports filters to the documented query types, and accept the supported finance ticker placeholders, dataset years, and CFR title numbers.
+- Use the published citation types and sort directions. Leave provider-specific date range interpretation to AnySearch and accept internationalized domains in indicator lookups.
+- Require result evidence for additional filters in citation, dataset, legal, finance, social media, and patent acceptance cases.
+
 ## 1.1.6 (2026-11-27)
 
 - Validate individual threat-intelligence indicators and the three-letter shape of flight currency codes in Search and Batch Search.

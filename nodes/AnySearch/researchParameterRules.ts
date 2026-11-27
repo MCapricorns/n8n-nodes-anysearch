@@ -50,7 +50,14 @@ const currency: FieldRule = {
 const publicationDate = dateValue('YYYY', 'YYYY-MM', 'YYYY-MM-DD');
 const day = dateValue('YYYY-MM-DD');
 const citationCount = format(/^\d+$/, 'a non-negative integer string');
-const datasetYear = format(/^-?\d+$/, 'a publication year');
+const datasetYear: FieldRule = {
+	matches: (value) =>
+		typeof value === 'number'
+			? Number.isSafeInteger(value)
+			: typeof value === 'string' && /^-?\d+$/.test(value),
+	expected: 'a publication year as an integer or integer string',
+};
+const positiveInteger = integer(1);
 
 function validOrcid(value: unknown): boolean {
 	if (typeof value !== 'string' || !/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(value)) return false;
@@ -80,20 +87,29 @@ function validCitationId(value: unknown, params: IDataObject): boolean {
 	return [...identifierTypes.values()].some((match) => match(value));
 }
 
-const citationPublicationTypes = choice(
-	'JournalArticle',
-	'Conference',
-	'Review',
-	'CaseReport',
-	'ClinicalTrial',
-	'Dataset',
-	'Editorial',
-	'LettersAndComments',
-	'MetaAnalysis',
-	'News',
-	'Study',
-	'Book',
-	'BookSection',
+// Document type IDs from https://api.crossref.org/types.
+const crossrefTypes = new Set(
+	`book book-chapter book-part book-section book-series book-set book-track component database
+	dataset dissertation edited-book grant journal journal-article journal-issue journal-volume
+	monograph other peer-review posted-content proceedings proceedings-article proceedings-series
+	reference-book reference-entry report report-component report-series standard`.split(/\s+/),
+);
+const citationPublicationTypes = commaSeparated(
+	choice(
+		'JournalArticle',
+		'Conference',
+		'Review',
+		'CaseReport',
+		'ClinicalTrial',
+		'Dataset',
+		'Editorial',
+		'LettersAndComments',
+		'MetaAnalysis',
+		'News',
+		'Study',
+		'Book',
+		'BookSection',
+	),
 );
 
 function checkRange(params: IDataObject, lower: string, upper: string): string | undefined {
@@ -157,15 +173,14 @@ export const researchParameterRules: CapabilityRuleMap = {
 				'citation',
 			),
 			open_access: booleanValue,
-			sort: format(/^[^:\s]+:\s*\S/, 'a RAMOSE field:order expression'),
+			// RAMOSE supports ascending and descending order: https://api.opencitations.net/index/v2
+			sort: format(/^[^:\s]+:(?:asc|desc)$/, 'a RAMOSE field:asc or field:desc expression'),
 			type: {
 				matches(value, params) {
-					if (typeof value !== 'string' || value.trim() === '') return false;
-					// Crossref's single-value type list is not exhaustive in the catalog.
 					return (
-						!value.includes(',') ||
-						(!/\s/.test(value) &&
-							value.split(',').every((part) => citationPublicationTypes.matches(part, params)))
+						typeof value === 'string' &&
+						(crossrefTypes.has(value) ||
+							(!/\s/.test(value) && citationPublicationTypes.matches(value, params)))
 					);
 				},
 				expected:
@@ -181,7 +196,7 @@ export const researchParameterRules: CapabilityRuleMap = {
 		fields: { year_from: datasetYear, year_to: datasetYear },
 		check: (params) => {
 			const { year_from: start, year_to: end } = params;
-			if (typeof start === 'string' && typeof end === 'string' && BigInt(start) > BigInt(end)) {
+			if (start !== undefined && end !== undefined && BigInt(String(start)) > BigInt(String(end))) {
 				return 'year_from must be on or before year_to.';
 			}
 			return undefined;
@@ -249,7 +264,7 @@ export const researchParameterRules: CapabilityRuleMap = {
 	},
 	'legal.legislation': {
 		fields: {
-			congress: integer(1),
+			congress: positiveInteger,
 			date_from: day,
 			date_to: day,
 			effective_from: publicationDate,
@@ -269,9 +284,14 @@ export const researchParameterRules: CapabilityRuleMap = {
 				'decree',
 			),
 			resource_kind: choice('rules', 'resources', 'all'),
+			title: {
+				matches: (value, params) =>
+					typeof value === 'string'
+						? value.trim() !== ''
+						: typeof value === 'number' && positiveInteger.matches(value, params),
+				expected: 'non-empty text or an integer CFR title number',
+			},
 		},
-		check: (params) =>
-			checkRange(params, 'date_from', 'date_to') ??
-			checkRange(params, 'effective_from', 'effective_to'),
+		check: (params) => checkRange(params, 'effective_from', 'effective_to'),
 	},
 };

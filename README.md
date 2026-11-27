@@ -122,12 +122,11 @@ a file hash without naming algorithms, while the separate scan capability lists 
 | --- | --- |
 | `travel.flight_status` | Supply `flight_number`. Discovery flags `departure` as required and describes it as optional. The node sends `departure: ""` if no airport is supplied. |
 | `finance.fundamental` | For `overview`, the node sends `cn_code: ""`. For `income`, `balance`, `cashflow`, `indicator`, and `holder`, supply a ticker string such as `"600519.SH"`. The node sends `symbol: ""`. |
-| `finance.calendar` | For `type: "earnings"`, the node sends `period: "90d"`. Supply a `symbol` or `cn_code` to select a company. |
+| `finance.calendar` | For `type: "earnings"`, `period` can be omitted or set to `"90d"`. Supply a `symbol` or `cn_code` to select a company. |
 | `gaming.esports` | Supply the fields required by the selected `type`. Use a platform-prefixed numeric `match_id` for `match_detail` and a valid `division` for divided leaderboard tiers. |
 
-For a round trip, the return date can be the departure date or a later one. Energy and patent
-date fields follow provider-specific formats. For year-first numeric dates, the node checks the
-calendar and rejects electricity query intervals whose end precedes their start.
+AnySearch interprets flight, energy, and patent date ranges. The node checks calendar dates in
+the documented flight formats and in recognized year-first formats for energy and patent fields.
 
 [Bundled parameter definitions](nodes/AnySearch/catalog.json) · [Search API](https://www.anysearch.com/docs/api-endpoints/v1-search) · [Capability discovery](https://www.anysearch.com/docs/api-endpoints/v1-sub-domains)
 
@@ -142,8 +141,9 @@ Choose **Search > Batch Search** and supply a JSON array of 1–5 REST search ob
 ]
 ~~~
 
-Each object accepts query, max_results, tag, params, zone, language, and format. Searches run
-concurrently, with at most five requests in flight per input item. Results remain in input
+Each object requires a non-empty `query`. Optional fields are `max_results`, `tag`, `params`, `zone`,
+`language`, and `format`. Supply `params` as a JSON object when a tag needs parameters. Searches
+run concurrently, with at most five requests in flight per input item. Results remain in input
 order. Successful queries include query, query_index, results, and metadata. Failed queries
 include error and a details object containing query, query_index, and any available request_id,
 http_status, code, and error_code. For HTTP 402, the only diagnostics retained from AnySearch are

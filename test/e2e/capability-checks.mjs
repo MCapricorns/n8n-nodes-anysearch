@@ -64,7 +64,7 @@ const cases = [
 	{
 		query: 'Upcoming company earnings',
 		tag: 'finance.calendar',
-		params: { type: 'earnings', symbol: 'AAPL', period: '7d' },
+		params: { type: 'earnings', symbol: 'AAPL' },
 		expectedParams: { type: 'earnings', symbol: 'AAPL', period: '90d' },
 		result: /earnings/i,
 	},
@@ -292,7 +292,7 @@ export function catalogRequestReport(records, requests, domains) {
 				sent.searchOutputDigest,
 				'Wire and node search results or metadata differ',
 			);
-			const result = assessSearchResults(input, output.results);
+			const result = assessSearchResults(expected, output.results);
 			const evidence = {
 				index,
 				tag: input.tag ?? 'general',

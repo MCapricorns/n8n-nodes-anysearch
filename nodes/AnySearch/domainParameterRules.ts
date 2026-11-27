@@ -1,5 +1,5 @@
 import type { CapabilityRuleMap, FieldRule } from './parameterRules';
-import { choice, dateValue, format, providerDate, reversedProviderDates } from './parameterRules';
+import { choice, dateValue, format, providerDate } from './parameterRules';
 
 const annualSalary: FieldRule = {
 	expected: 'a numeric annual salary in USD',
@@ -44,10 +44,6 @@ export const domainParameterRules: CapabilityRuleMap = {
 			metric: choice('price', 'generation', 'emissions', 'demand', 'capacity'),
 			type: choice('EUElectricity', 'AustralianElectricity', 'USEnergyData', 'GlobalElectricity'),
 		},
-		check: (params) =>
-			reversedProviderDates(params.date_start, params.date_end)
-				? 'date_start must be on or before date_end.'
-				: undefined,
 	},
 	'energy.production': {
 		fields: {

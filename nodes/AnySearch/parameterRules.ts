@@ -95,21 +95,6 @@ function yearFirstPattern(value: string): RegExp | undefined {
 	return yearFirstPatterns.find((entry) => entry.test(value));
 }
 
-function providerDateKey(value: unknown): string | undefined {
-	if (typeof value !== 'string') return undefined;
-	const text = value.trim();
-	return yearFirstPattern(text) ? text.replace(/-/g, '') : undefined;
-}
-
-export function reversedProviderDates(start: unknown, end: unknown): boolean {
-	const lower = providerDateKey(start);
-	const upper = providerDateKey(end);
-	if (!lower || !upper) return false;
-	// A year or month can overlap a more precise date within it.
-	const precision = Math.min(lower.length, upper.length);
-	return lower.slice(0, precision) > upper.slice(0, precision);
-}
-
 export const providerDate: FieldRule = {
 	expected: 'a date with a valid calendar month and day when supplied',
 	matches(value) {

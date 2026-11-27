@@ -350,22 +350,21 @@ function searchBody(node: INode, input: IDataObject | undefined): IDataObject {
 		const value = input[key];
 		if (value === undefined) continue;
 		if (typeof value !== 'string') throw new NodeOperationError(node, `${key} must be a string`);
-		if (value.trim()) body[key] = value.trim();
+		const text = key === 'tag' ? value.trim() : value;
+		if (text !== '') body[key] = text;
 	}
-	if (body.zone && body.zone !== 'cn' && body.zone !== 'intl') {
+	if (body.zone !== undefined && body.zone !== 'cn' && body.zone !== 'intl') {
 		throw new NodeOperationError(node, 'Zone must be cn or intl');
 	}
 	if (typeof body.tag === 'string' && !CAPABILITY_TAG_PATTERN.test(body.tag)) {
 		throw new NodeOperationError(node, 'Capability Tag must be a complete domain.sub_domain tag');
 	}
-	if (body.format && body.format !== 'json' && body.format !== 'markdown') {
+	if (body.format !== undefined && body.format !== 'json' && body.format !== 'markdown') {
 		throw new NodeOperationError(node, 'Response Format must be json or markdown');
 	}
-	const decoded = readTagParameters(node, input.params);
-	const params = objectValue(decoded);
+	const params = objectValue(input.params);
 	if (
 		input.params !== undefined &&
-		input.params !== '' &&
 		(!params || Object.prototype.toString.call(params) !== '[object Object]')
 	) {
 		throw new NodeOperationError(node, 'Tag Parameters must be a JSON object');
@@ -453,12 +452,14 @@ async function searchOperation(
 	this: IExecuteFunctions,
 	itemIndex: number,
 ): Promise<INodeExecutionData[]> {
+	const node = this.getNode();
 	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
-	const { maxResults, simplify, ...fields } = options;
-	const body = searchBody(this.getNode(), {
+	const { maxResults, simplify, params, ...fields } = options;
+	const body = searchBody(node, {
 		...fields,
 		query: this.getNodeParameter('query', itemIndex, ''),
 		...(maxResults === undefined ? {} : { max_results: maxResults }),
+		params: readTagParameters(node, params),
 	});
 	const data = await search.call(this, body, itemIndex);
 	const results = data.results as IDataObject[];
@@ -475,7 +476,7 @@ async function batchSearchOperation(
 ): Promise<INodeExecutionData[]> {
 	const node = this.getNode();
 	let queries: unknown = this.getNodeParameter('queries', itemIndex);
-	if (typeof queries === 'string') {
+	if (typeof queries === 'string' && queries.trim() !== '') {
 		try {
 			queries = JSON.parse(queries);
 		} catch {
@@ -769,7 +770,7 @@ export class AnySearch implements INodeType {
 				name: 'queries',
 				type: 'json',
 				required: true,
-				default: '[{"query": "n8n workflow automation", "max_results": 3}]',
+				default: '',
 				displayOptions: { show: { resource: ['search'], operation: ['batchSearch'] } },
 				description:
 					'JSON array of 1–5 objects with query and optional tag, params, max_results, zone, language, and format. Each query returns a result or an error in input order.',

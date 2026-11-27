@@ -806,15 +806,28 @@ const datasetSources = {
 	],
 };
 
+function checkedAllParameters(params, checked) {
+	return Object.keys(params).every((field) => checked.includes(field));
+}
+
 function checkSelectedResult(tag, params, result) {
 	const url = sourceUrl(result.url);
-	if (tag === 'finance.calendar' && params.type === 'dividends') return checkDividend(result);
+	if (tag === 'finance.calendar' && params.type === 'dividends')
+		return checkDividend(result) && checkedAllParameters(params, ['type']);
 	if (tag === 'ip.global' && params.type === 'GlobalPatent' && params.applicant)
-		return checkPatentApplicant(result, params.applicant);
+		return (
+			checkPatentApplicant(result, params.applicant) &&
+			checkedAllParameters(params, ['type', 'applicant'])
+		);
 	if (tag === 'finance.calendar' && params.type === 'earnings')
-		return checkEarnings(result, params);
-	if (tag === 'finance.news' && params.type === 'flash')
-		return checkFinancialFlash(result, url, params.news_src ?? 'sina');
+		return (
+			checkEarnings(result, params) &&
+			checkedAllParameters(params, ['type', params.symbol ? 'symbol' : 'cn_code'])
+		);
+	if (tag === 'finance.news' && params.type === 'flash') {
+		const matches = checkFinancialFlash(result, url, params.news_src ?? 'sina');
+		return matches && checkedAllParameters(params, ['type', 'news_src']);
+	}
 	if (tag === 'social_media.social_media' && params.type) {
 		if (!Object.hasOwn(socialSources, params.type)) return undefined;
 		const [hosts, path] = socialSources[params.type];
@@ -841,28 +854,34 @@ function checkSelectedResult(tag, params, result) {
 			);
 		// A status permalink alone cannot distinguish X Top from Latest.
 		if (params.type === 'x_top' || params.type === 'x_latest') return false;
-		return true;
+		return checkedAllParameters(params, ['type']);
 	}
 	if (tag === 'legal.legislation' && params.jurisdiction === 'US' && params.collection) {
 		const matches = matchesCollection(url, params.collection);
 		if (matches === undefined) return undefined;
 		assert(matches, 'Expected a document from ' + params.collection);
+		const checked = ['jurisdiction', 'collection'];
 		if (params.collection === 'BILLS' && params.congress) {
 			const congress = /\/bill\/(\d+)[a-z]+-congress\/|\/BILLS-(\d+)[a-z]/i.exec(url.pathname);
-			if (congress)
+			if (congress) {
 				assert.equal(
 					congress[1] ?? congress[2],
 					String(params.congress),
 					'Unexpected US Congress session',
 				);
+				checked.push('congress');
+			}
 		}
-		if (params.collection === 'CFR' && params.title) {
+		if (params.collection === 'CFR' && /^\d+$/.test(String(params.title))) {
 			const title = /(?:title-|cfr\/text\/|link\/cfr\/|CFR-\d{4}-title)(\d+)/i.exec(
 				url.pathname,
 			)?.[1];
-			if (title) assert.equal(title, String(params.title), 'Unexpected CFR title');
+			if (title) {
+				assert.equal(title, String(params.title), 'Unexpected CFR title');
+				checked.push('title');
+			}
 		}
-		return true;
+		return checkedAllParameters(params, checked);
 	}
 	if (
 		tag === 'legal.judicial' &&
@@ -873,7 +892,10 @@ function checkSelectedResult(tag, params, result) {
 			matchesJudgment(result, url, params),
 			'Expected a HUDOC judgment for the requested respondent',
 		);
-		return true;
+		const checked = ['jurisdiction', 'respondent'];
+		if (params.doc_type === 'JUDGMENT') checked.push('doc_type');
+		if (params.document_type === 'judgment') checked.push('document_type');
+		return checkedAllParameters(params, checked);
 	}
 	if (
 		tag === 'legal.judicial' &&
@@ -881,7 +903,7 @@ function checkSelectedResult(tag, params, result) {
 		(params.case_id || params.case_number)
 	) {
 		checkCanadianCase(result, url, params);
-		return true;
+		return checkedAllParameters(params, ['jurisdiction', 'case_id', 'case_number']);
 	}
 	if (
 		tag === 'legal.legislation' &&
@@ -890,21 +912,26 @@ function checkSelectedResult(tag, params, result) {
 		params.resource_kind === 'rules'
 	) {
 		assert(matchesCanadianRegulation(url), 'Expected a Canadian federal regulation');
-		return true;
+		return checkedAllParameters(params, ['jurisdiction', 'database_id', 'resource_kind']);
 	}
 	if (tag === 'academic.paper') return checkPaper(result, url, params);
 	if (tag === 'academic.citation' && (params.op ?? 'metadata') === 'metadata') {
-		const doi = params.id_type === 'doi' || /^10\.\d+\//.test(params.id) ? params.id : params.doi;
-		if (doi) {
+		const idIsDoi = params.id_type === 'doi' || /^10\.\d+(?:\.\d+)*\//.test(params.id);
+		const dois = new Set([idIsDoi ? params.id : undefined, params.doi].filter(Boolean));
+		for (const doi of dois) {
 			const match = matchesDoi(result, url, doi);
 			requireEvidence(match !== undefined, 'No record DOI available to verify ' + doi);
 			assert(match, 'Expected metadata for DOI ' + doi);
-			return true;
+		}
+		if (dois.size) {
+			const checked = ['op', 'doi'];
+			if (idIsDoi) checked.push('id', 'id_type');
+			return checkedAllParameters(params, checked);
 		}
 	}
 	if (tag === 'academic.person' && params.orcid) {
 		assert(matchesOrcid(result, url, params.orcid), 'Expected author ORCID ' + params.orcid);
-		return true;
+		return checkedAllParameters(params, ['orcid']);
 	}
 	if (tag === 'academic.dataset' && params.client_id) {
 		if (!Object.hasOwn(datasetSources, params.client_id)) return undefined;
@@ -914,35 +941,55 @@ function checkSelectedResult(tag, params, result) {
 				(fromHost(url, ['doi.org']) && source[2].test(decodeURIComponent(url.pathname).slice(1))),
 			'Expected dataset repository ' + params.client_id,
 		);
+		const records = [result, contentRecord(result.content)].filter(Boolean);
+		const checked = ['client_id'];
 		if (params.resource_type) {
-			const row = contentRecord(result.content) ?? result;
 			const figshareType =
 				fromHost(url, ['figshare.com']) &&
 				/^\/articles\/([a-z_]+)\/[^/]+\/\d+(?:\/\d+)?\/?$/i.exec(url.pathname)?.[1];
-			const types = [
-				row.resource_type,
-				row.resourceTypeGeneral,
-				row.types?.resourceTypeGeneral,
-				figshareType,
-			].filter(Boolean);
+			const types = records
+				.flatMap((row) => [
+					row.resource_type,
+					row.resourceTypeGeneral,
+					row.types?.resourceTypeGeneral,
+				])
+				.concat(figshareType)
+				.filter((type) => typeof type === 'string' && type.trim());
 			if (types.length) {
 				assert(
-					types.every(
-						(value) => String(value).toLowerCase() === params.resource_type.toLowerCase(),
-					),
+					types.every((value) => value.toLowerCase() === params.resource_type.toLowerCase()),
 					'Unexpected dataset resource type',
 				);
-			} else {
-				return (
-					params.resource_type.toLowerCase() === 'dataset' &&
-					(params.client_id === 'bl.dryad' ||
-						/^(?:the|this)\s+dataset\s+(?:contains|includes|provides|comprises|consists)\b/i.test(
-							String(result.snippet ?? '').trim(),
-						))
+			}
+			const inferredDataset =
+				params.resource_type.toLowerCase() === 'dataset' &&
+				(params.client_id === 'bl.dryad' ||
+					/^(?:the|this)\s+dataset\s+(?:contains|includes|provides|comprises|consists)\b/i.test(
+						String(result.snippet ?? '').trim(),
+					));
+			if (types.length || inferredDataset) checked.push('resource_type');
+		}
+		if (params.year_from !== undefined || params.year_to !== undefined) {
+			const years = records
+				.flatMap((row) => [row.publicationYear, row.publication_year])
+				.filter(
+					(year) =>
+						Number.isSafeInteger(year) || (typeof year === 'string' && /^-?\d+$/.test(year)),
+				)
+				.map(BigInt);
+			if (years.length) {
+				assert(
+					years.every(
+						(year) =>
+							(params.year_from === undefined || year >= BigInt(params.year_from)) &&
+							(params.year_to === undefined || year <= BigInt(params.year_to)),
+					),
+					'Dataset publication year is outside the requested range',
 				);
+				checked.push('year_from', 'year_to');
 			}
 		}
-		return true;
+		return checkedAllParameters(params, checked);
 	}
 	if (tag === 'gaming.esports' && params.type === 'match_detail') {
 		assert(matchesGame(result, url, params.match_id), 'Expected match ' + params.match_id);
@@ -1012,7 +1059,7 @@ function evaluateResults({ tag, params = {}, max_results }, results, strict) {
 		);
 		try {
 			const checked = checkSelectedResult(tag, params, result);
-			if (checked === undefined) status = 'nonemptyOnly';
+			if (checked === undefined && status === 'verified') status = 'nonemptyOnly';
 			if (checked === false) {
 				status = 'unverified';
 				reason ??= 'Result lacks evidence for the requested operation or filters';

@@ -157,7 +157,6 @@
   {
     "query": "Big Buck Bunny",
     "tag": "film.torrent",
-    "params": {},
     "max_results": 1
   },
   {
@@ -228,13 +227,11 @@
   {
     "query": "Portal 2",
     "tag": "gaming.store",
-    "params": {},
     "max_results": 1
   },
   {
     "query": "What is the capital of France?",
     "tag": "general.general",
-    "params": {},
     "max_results": 1
   },
   {
@@ -248,13 +245,11 @@
   {
     "query": "life expectancy Japan",
     "tag": "health.stats",
-    "params": {},
     "max_results": 1
   },
   {
     "query": "type 2 diabetes",
     "tag": "health.trial",
-    "params": {},
     "max_results": 1
   },
   {
@@ -298,7 +293,6 @@
   {
     "query": "mountain landscape",
     "tag": "resource.image",
-    "params": {},
     "max_results": 1
   },
   {

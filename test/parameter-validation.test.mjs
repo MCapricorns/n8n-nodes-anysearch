@@ -18,7 +18,9 @@ const node = {
 };
 
 function expectedOverrides(tag, params) {
-	if (tag === 'finance.calendar' && params?.type === 'earnings') return { period: '90d' };
+	if (tag === 'finance.calendar' && params?.type === 'earnings' && params.period === undefined) {
+		return { period: '90d' };
+	}
 	if (tag === 'finance.fundamental' && params?.type === 'overview') return { cn_code: '' };
 	if (tag === 'finance.fundamental') return { symbol: '' };
 	return {};
@@ -186,17 +188,13 @@ test('A-share identifiers are checked only for operations that use them', () => 
 	}
 });
 
-test('electricity date ranges respect the precision of both endpoints', () => {
+test('electricity date filters are passed to the provider without imposing their order', () => {
 	const tag = 'energy.electricity';
 	const type = 'EUElectricity';
 	for (const [date_start, date_end] of [
 		['2026-05-24', '2026-05-23'],
 		['20260525', '2026-05-23'],
 		['2027-01', '2026'],
-	]) {
-		assertFieldError(tag, 'date_end', { type, date_start, date_end }, 'test');
-	}
-	for (const [date_start, date_end] of [
 		['2026-05-24', '2026-05-24'],
 		['2026-05-24', '2026'],
 		['2026', '2026-01-01'],

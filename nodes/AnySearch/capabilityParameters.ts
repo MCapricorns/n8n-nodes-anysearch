@@ -53,14 +53,18 @@ function normalizeParameters(tag: string, input: IDataObject): IDataObject {
 		}
 		if (typeof type === 'string' && statementTypes.has(type)) return { ...params, symbol: '' };
 	}
-	if (tag === 'finance.calendar' && type === 'earnings') return { ...params, period: '90d' };
+	if (tag === 'finance.calendar' && type === 'earnings' && params.period === undefined) {
+		return { ...params, period: '90d' };
+	}
 	return params;
 }
 
 function allowsEmpty(tag: string, field: string, type: unknown): boolean {
 	if (tag === 'finance.fundamental')
 		return field === 'symbol' || (field === 'cn_code' && type === 'overview');
-	if (tag === 'finance.quote') return field === 'symbol' && type === 'commodity';
+	if (tag === 'finance.quote') {
+		return field === 'cn_code' || (field === 'symbol' && type !== 'crypto');
+	}
 	return emptyFields[tag]?.includes(field) ?? false;
 }
 
@@ -77,7 +81,7 @@ export function capabilityParameters(
 				'Choose a Capability Tag before providing Tag Parameters.',
 			);
 		}
-		return input;
+		return undefined;
 	}
 	const fields = definitions.get(tag);
 	if (!fields) {
@@ -126,5 +130,5 @@ export function capabilityParameters(
 	}
 	const error = capability?.check?.(params, query);
 	if (error) throw new NodeOperationError(node, `For ${tag}, ${error}`);
-	return input !== undefined || Object.keys(params).length ? params : undefined;
+	return Object.keys(params).length ? params : undefined;
 }
