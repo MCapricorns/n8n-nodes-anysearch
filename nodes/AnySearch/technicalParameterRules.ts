@@ -2,11 +2,16 @@ import type { CapabilityRuleMap, FieldRule } from './parameterRules';
 import { choice, dateValue, format, integer } from './parameterRules';
 
 const airport = format(/^[a-z]{3}$/i, 'a three-letter IATA airport code');
+const flightCurrency = format(/^[a-z]{3}$/i, 'a three-letter currency code such as USD or CNY');
 const count = integer(0);
 const flightDate = dateValue('DD/MM/YYYY', 'YYYY-MM-DD');
 
 const dnsName =
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/i;
+const urlScheme = /^[a-z][a-z\d+.-]*:\/\//i;
+const ipv6Candidate = /^[a-f\d.]*:[a-f\d.]*:[a-f\d:.]*$/i;
+// Intel does not enumerate hash algorithms. Preserve encoded digests and algorithm prefixes.
+const intelHash = /^[a-z\d+/_-]+(?::[a-z\d+/_-]+)*={0,2}$/i;
 
 function isIPv4(value: string): boolean {
 	const octets = value.split('.');
@@ -18,16 +23,17 @@ function isIPv4(value: string): boolean {
 
 function isNetworkIndicator(value: string): boolean {
 	if (isIPv4(value)) return true;
-	const hasScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(value);
+	const hasScheme = urlScheme.test(value);
 	const isHostName = value.includes('.') && !/[\s:/\\?#@%]/.test(value);
-	const isIPv6Candidate = value.includes(':') && /^[a-f\d:.]+$/i.test(value);
+	const isIPv6Candidate = ipv6Candidate.test(value);
 	if (!hasScheme && !isHostName && !isIPv6Candidate) return false;
 	try {
 		const authority = isIPv6Candidate ? `[${value}]` : value;
-		const parsed = new URL(hasScheme ? value : `https://${authority}`);
-		return hasScheme || isIPv6Candidate
-			? Boolean(parsed.hostname)
-			: dnsName.test(parsed.hostname) && !isIPv4(parsed.hostname);
+		const { hostname } = new URL(hasScheme ? value : `https://${authority}`);
+		if (isIPv6Candidate) return hostname.startsWith('[');
+		if (hasScheme)
+			return hostname.startsWith('[') || (/[a-z\d]/i.test(hostname) && !/[,;]/.test(hostname));
+		return dnsName.test(hostname) && !isIPv4(hostname);
 	} catch {
 		return false;
 	}
@@ -36,7 +42,10 @@ function isNetworkIndicator(value: string): boolean {
 function indicator(hash: RegExp, expected: string): FieldRule {
 	return {
 		matches: (value) =>
-			typeof value === 'string' && (hash.test(value) || isNetworkIndicator(value)),
+			typeof value === 'string' &&
+			!/[\s\p{Cc}]/u.test(value) &&
+			((!urlScheme.test(value) && !ipv6Candidate.test(value) && hash.test(value)) ||
+				isNetworkIndicator(value)),
 		expected,
 	};
 }
@@ -104,7 +113,7 @@ const vulnerabilityValue: FieldRule = {
 
 export const technicalParameterRules: CapabilityRuleMap = {
 	'security.intel': {
-		fields: { ioc: format(/^\S+$/, 'a single domain, IP address, URL, or file hash') },
+		fields: { ioc: indicator(intelHash, 'a single domain, IP address, URL, or file hash') },
 	},
 	'security.noise': {
 		fields: {
@@ -140,6 +149,7 @@ export const technicalParameterRules: CapabilityRuleMap = {
 			arrival: airport,
 			cabin_class: choice('Economy', 'Business', 'First', 'PremiumEconomy'),
 			children: count,
+			currency: flightCurrency,
 			date: flightDate,
 			departure: airport,
 			infants: count,
