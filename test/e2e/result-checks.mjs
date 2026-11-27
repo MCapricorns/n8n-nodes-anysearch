@@ -948,7 +948,7 @@ function checkSelectedResult(tag, params, result) {
 			);
 			if (params.champion)
 				assert(
-					[champion, ...entries].includes(params.champion.toLowerCase()),
+					[champion, ...entries].some((name) => name?.includes(params.champion.toLowerCase())),
 					'Expected mastery for champion ' + params.champion,
 				);
 			return Boolean(champion || entries.length);

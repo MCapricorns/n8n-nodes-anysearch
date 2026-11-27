@@ -906,6 +906,14 @@ test('ranked, live game and champion mastery need evidence of the named operatio
 		true,
 	);
 	const mastery = input('mastery', { champion: 'Yasuo' });
+	for (const [filter, championName] of [
+		['Lee', 'Lee Sin'],
+		['vi', 'Sivir'],
+	]) {
+		const record = { url, championName, championPoints: 1300 };
+		assert.equal(checkSearchResults(input('mastery', { champion: filter }), [record]), true);
+		assert.throws(() => checkSearchResults(mastery, [record]), /Expected mastery/);
+	}
 	assert.equal(
 		checkSearchResults(mastery, [
 			{ url, snippet: 'Mastery Table ; Taliyah, 24, 236,743 pts ; Yasuo, 23, 225,480 pts' },
