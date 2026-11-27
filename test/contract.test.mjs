@@ -42,16 +42,16 @@ function scenario({
 	credentialData,
 	credentialError,
 	continueOnFail = false,
+	onError,
 	inputItems = [{ json: {} }],
 } = {}) {
 	const requests = [];
 	const hasCredential = credentialData !== undefined || credentialError !== undefined;
-	const configured = hasCredential
-		? {
-				...node,
-				credentials: { anySearchApi: { id: 'offline-credential', name: 'Offline fixture' } },
-			}
-		: { ...node };
+	const configured = { ...node, onError };
+	if (hasCredential)
+		configured.credentials = {
+			anySearchApi: { id: 'offline-credential', name: 'Offline fixture' },
+		};
 	const resolved = {
 		resource: 'search',
 		operation: 'search',
@@ -229,6 +229,25 @@ test('continued failures use the n8n error-output schema without losing diagnost
 	assert.equal(item.json.details.request_id, success.request_id);
 	assert.equal(item.json.details.http_status, 429);
 	assert.deepEqual(item.pairedItem, { item: 0 });
+});
+
+test('dedicated error outputs retain diagnostics through legacy n8n routing and serialization', async () => {
+	for (const parameters of [{}, { operation: 'batchSearch', queries: [{ query: 'test' }] }]) {
+		const r = await runCase({
+			parameters,
+			onError: 'continueErrorOutput',
+			continueOnFail: true,
+			statusCode: 429,
+		});
+		const item = r.output[0][0];
+		assert.equal(item.error, undefined);
+		assert.equal(item.json.message, item.json.error);
+		const stored = JSON.parse(JSON.stringify(item.json));
+		assert.deepEqual(Object.keys(stored).sort(), ['details', 'error']);
+		assert.equal(stored.details.http_status, 429);
+		assert.equal(stored.details.request_id, success.request_id);
+		if (parameters.operation) assert.equal(stored.details.query_index, 0);
+	}
 });
 
 test('natural-language business errors cannot disclose generated credentials', async () => {

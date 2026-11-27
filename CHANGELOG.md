@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 1.1.4 (2026-11-27)
 
 - Enforce the earnings calendar period, the unused fundamental ticker and esports parameter formats and choices in Search and Batch Search.
+- Route errors with request IDs, HTTP status and batch indexes to the dedicated error output on n8n 2.17.3.
 - Verify source links, document types and exact record identities in acceptance runs. Report empty results and upstream mismatches with their request IDs.
 - Check every reviewed capability field through both search operations and compare field definitions with live discovery in CI.
 

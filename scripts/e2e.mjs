@@ -123,7 +123,7 @@ const nodes = [
 	},
 ];
 const connections = { Start: { main: [[]] } };
-function add(name, parameters, credential = 'valid', check = () => {}) {
+function add(name, parameters, credential, check) {
 	const node = {
 		id: name,
 		name,
@@ -153,12 +153,12 @@ function add(name, parameters, credential = 'valid', check = () => {}) {
 		},
 	});
 }
-async function addStandardTests() {
-	function searchCheck(items, max = 2) {
+function addStandardTests() {
+	function searchCheck(items) {
 		assert.equal(items.length, 1);
 		assert.equal(typeof items[0].json.request_id, 'string');
 		assert(Array.isArray(items[0].json.results));
-		assert(items[0].json.results.length > 0 && items[0].json.results.length <= max);
+		assert(items[0].json.results.length > 0 && items[0].json.results.length <= 2);
 	}
 	function anonymousCheck(items) {
 		if (items[0]?.json.details?.http_status !== 402) return searchCheck(items);
@@ -516,7 +516,7 @@ async function addCatalogTests(credential) {
 	}
 }
 
-if (!capabilityOnly) await addStandardTests();
+if (!capabilityOnly) addStandardTests();
 if (!capabilityOnly || catalogFile) await addCatalogTests(apiKey ? 'valid' : null);
 addCapabilityChecks(add, apiKey ? 'valid' : null);
 async function importCredentials() {
@@ -640,9 +640,19 @@ try {
 	summary.workflowId = workflow.id;
 	summary.executionStatus = data.status;
 	const runData = data.data.resultData.runData;
-	for (const test of tests) {
-		const record = { name: test.name };
+	function verify(name, check) {
+		const record = { name, passed: true };
 		try {
+			check(record);
+		} catch (error) {
+			record.passed = false;
+			record.failure = redact(error.message);
+		}
+		summary.tests.push(record);
+		console.log(JSON.stringify(record));
+	}
+	for (const test of tests) {
+		verify(test.name, (record) => {
 			const runs = runData[test.name];
 			assert(Array.isArray(runs), 'Node was not executed');
 			const items = runs.at(-1).data.main[0];
@@ -667,13 +677,7 @@ try {
 				],
 			}));
 			test.check(items);
-			record.passed = true;
-		} catch (error) {
-			record.passed = false;
-			record.failure = redact(error.message);
-		}
-		summary.tests.push(record);
-		console.log(JSON.stringify(record));
+		});
 	}
 	summary.requests = (await fs.readFile(traceFile, 'utf8'))
 		.split('\n')
@@ -692,17 +696,7 @@ try {
 		summary.requests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
-	function verify(name, check) {
-		const record = { name, passed: true };
-		try {
-			check();
-		} catch (error) {
-			record.passed = false;
-			record.failure = redact(error.message);
-		}
-		summary.tests.push(record);
-		console.log(JSON.stringify(record));
-	}
+
 	verify('Capability HTTP requests', () =>
 		checkCapabilityRequests(summary.requests, summary.tests),
 	);

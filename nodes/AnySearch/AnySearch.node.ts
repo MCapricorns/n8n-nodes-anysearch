@@ -117,17 +117,20 @@ function errorItem(
 	fields: IDataObject = {},
 ): INodeExecutionData {
 	const failure = toUpstreamError(node, error);
-	return {
-		json: {
-			error: failure.message,
-			details: {
-				...fields,
-				...(failure.context.request_id ? { request_id: failure.context.request_id } : {}),
-				...(failure.context.http_status ? { http_status: failure.context.http_status } : {}),
-			},
+	const json = {
+		error: failure.message,
+		details: {
+			...fields,
+			...(failure.context.request_id ? { request_id: failure.context.request_id } : {}),
+			...(failure.context.http_status ? { http_status: failure.context.http_status } : {}),
 		},
-		pairedItem: { item: itemIndex },
 	};
+	if (node.onError === 'continueErrorOutput') {
+		// n8n 2.17 checks json.message when routing two-key error items. Expose the
+		// alias during routing and serialize only the public error and diagnostics.
+		Object.defineProperty(json, 'message', { value: failure.message });
+	}
+	return { json, pairedItem: { item: itemIndex } };
 }
 
 async function readApiKey(this: AnySearchRequestContext): Promise<string | undefined> {
