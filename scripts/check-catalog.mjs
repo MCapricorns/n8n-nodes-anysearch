@@ -1,30 +1,14 @@
-// Capability discovery is public and does not use search quota.
+// Compare the bundled catalog and the matrix with the live directory. Discovery uses no quota.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
 	catalogCoverage,
 	catalogDefinitions,
 	changedDefinitions,
+	discoverCatalog,
 } from '../test/e2e/catalog-checks.mjs';
 
-async function discover(path) {
-	const response = await fetch('https://api.anysearch.com' + path, {
-		signal: AbortSignal.timeout(30_000),
-	});
-	assert(response.ok, 'Capability discovery returned HTTP ' + response.status);
-	const envelope = await response.json();
-	assert.equal(envelope.code, 0, 'Capability discovery failed');
-	assert(
-		Array.isArray(envelope.data?.domains) && envelope.data.domains.length > 0,
-		'Empty domain catalog',
-	);
-	return envelope.data.domains;
-}
-
-const listed = (await discover('/v1/domains')).map(({ domain }) => domain);
-const query = new URLSearchParams(listed.map((domain) => ['domain', domain]));
-const domains = await discover('/v1/sub-domains?' + query);
-assert.deepEqual(domains.map(({ domain }) => domain).sort(), listed.sort());
+const { domains } = await discoverCatalog();
 const live = catalogDefinitions(domains);
 const { tags: reviewed } = JSON.parse(
 	await readFile(new URL('../nodes/AnySearch/catalog.json', import.meta.url)),

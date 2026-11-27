@@ -1,62 +1,63 @@
 {
-	"name": "n8n-nodes-anysearch",
-	"version": "1.1.11",
-	"description": "n8n community nodes for AnySearch: unified web search, vertical capability search, and URL content extraction",
-	"license": "MIT",
-	"homepage": "https://github.com/MCapricorns/n8n-nodes-anysearch#readme",
-	"keywords": [
-		"n8n-community-node-package",
-		"n8n",
-		"anysearch",
-		"search",
-		"web-search"
-	],
-	"author": {
-		"name": "MCapricorns",
-		"email": "thisbelove@me.com"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/MCapricorns/n8n-nodes-anysearch.git"
-	},
-	"scripts": {
-		"build": "n8n-node build",
-		"prepack": "npm run build",
-		"dev": "n8n-node dev",
-		"lint": "n8n-node lint",
-		"lint:fix": "n8n-node lint --fix",
-		"test": "n8n-node build && node --test test/*.test.mjs",
-		"test:catalog": "node scripts/check-catalog.mjs",
-		"test:e2e": "node scripts/e2e.mjs",
-		"release": "n8n-node release",
-		"prepublishOnly": "n8n-node prerelease"
-	},
-	"files": [
-		"dist",
-		"!dist/bug",
-		"!dist/tsconfig.tsbuildinfo"
-	],
-	"publishConfig": {
-		"access": "public"
-	},
-	"n8n": {
-		"n8nNodesApiVersion": 1,
-		"strict": true,
-		"credentials": [
-			"dist/credentials/AnySearchApi.credentials.js"
-		],
-		"nodes": [
-			"dist/nodes/AnySearch/AnySearch.node.js"
-		]
-	},
-	"devDependencies": {
-		"@n8n/node-cli": "0.55.5",
-		"eslint": "9.39.4",
-		"prettier": "3.8.3",
-		"release-it": "21.1.2",
-		"typescript": "5.9.3"
-	},
-	"peerDependencies": {
-		"n8n-workflow": "*"
-	}
+  "name": "n8n-nodes-anysearch",
+  "version": "1.2.0",
+  "description": "n8n community nodes for AnySearch: unified web search, vertical capability search, and URL content extraction",
+  "license": "MIT",
+  "homepage": "https://github.com/MCapricorns/n8n-nodes-anysearch#readme",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "anysearch",
+    "search",
+    "web-search"
+  ],
+  "author": {
+    "name": "MCapricorns",
+    "email": "thisbelove@me.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MCapricorns/n8n-nodes-anysearch.git"
+  },
+  "scripts": {
+    "build": "n8n-node build",
+    "prepack": "npm run build",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "test": "n8n-node build && node --test test/*.test.mjs",
+    "test:catalog": "node scripts/check-catalog.mjs",
+    "catalog:sync": "node scripts/sync-catalog.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "release": "n8n-node release",
+    "prepublishOnly": "n8n-node prerelease"
+  },
+  "files": [
+    "dist",
+    "!dist/bug",
+    "!dist/tsconfig.tsbuildinfo"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/AnySearchApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/AnySearch/AnySearch.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "0.55.5",
+    "eslint": "9.39.4",
+    "prettier": "3.8.3",
+    "release-it": "21.1.2",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
 }

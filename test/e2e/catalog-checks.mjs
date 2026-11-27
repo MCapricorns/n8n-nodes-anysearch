@@ -22,6 +22,30 @@ export function catalogDefinitions(domains) {
 	return tags;
 }
 
+// Capability discovery is public and uses no search quota.
+export async function discover(path) {
+	const response = await fetch('https://api.anysearch.com' + path, {
+		signal: AbortSignal.timeout(30_000),
+	});
+	assert(response.ok, 'Capability discovery returned HTTP ' + response.status);
+	const envelope = await response.json();
+	assert.equal(envelope.code, 0, 'Capability discovery failed');
+	return envelope.data;
+}
+
+// The directory version and every tag definition, in the order of GET /v1/domains.
+export async function discoverCatalog() {
+	const { domains: listed, topology_version: topologyVersion } = await discover('/v1/domains');
+	assert(Array.isArray(listed) && listed.length > 0, 'Empty domain catalog');
+	const query = new URLSearchParams(listed.map(({ domain }) => ['domain', domain]));
+	const { domains } = await discover('/v1/sub-domains?' + query);
+	assert.deepEqual(
+		domains.map(({ domain }) => domain),
+		listed.map(({ domain }) => domain),
+	);
+	return { topologyVersion, domains };
+}
+
 export function changedDefinitions(reviewed, live) {
 	const changed = [];
 	for (const tag of new Set([...Object.keys(reviewed), ...Object.keys(live)])) {

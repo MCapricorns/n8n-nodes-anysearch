@@ -7,17 +7,8 @@ function requireEvidence(condition, reason) {
 	if (!condition) throw new MissingEvidence(reason);
 }
 
-const flashSources = {
-	sina: ['sina.com.cn', 'sina.cn'],
-	wallstreetcn: ['wallstreetcn.com'],
-	'10jqka': ['10jqka.com.cn'],
-	eastmoney: ['eastmoney.com'],
-	cls: ['cls.cn'],
-	yicai: ['yicai.com'],
-	yuncaijing: ['yuncaijing.com'],
-	fenghuang: ['ifeng.com'],
-	jinrongjie: ['jrj.com.cn'],
-};
+// Display names that long-form snippets carry in their src= line.
+const newsSourceNames = { sina: '新浪财经' };
 
 const reddit = ['reddit.com'];
 const linkedin = ['linkedin.com'];
@@ -187,7 +178,7 @@ const platforms = {
 
 function matchIdFromUrl(url) {
 	const match =
-		fromHost(url, ['leagueofgraphs.com']) && /^\/match\/([a-z]+\d*)\/(\d+)\/?$/i.exec(url.pathname);
+		fromHost(url, ['leagueofgraphs.com']) && /^\/match\/([a-z]+\d*)\/(\d+)/i.exec(url.pathname);
 	if (match) return (platforms[match[1].toLowerCase()] ?? match[1].toUpperCase()) + '_' + match[2];
 	if (fromHost(url, ['riotgames.com']))
 		return /^\/lol\/match\/v5\/matches\/([A-Z]+\d*_\d+)\/?$/.exec(url.pathname)?.[1];
@@ -202,32 +193,23 @@ function contentRecord(content) {
 	}
 }
 
-function matchesGame(result, url, id) {
+// The service answers an unknown match ID or item name with a no_data record for it.
+function noDataFor(result, kind, subject) {
 	const record = contentRecord(result.content);
-	const linkId = matchIdFromUrl(url);
-	if (linkId && linkId !== id) return false;
-	if (record?.metadata?.matchId !== undefined && record.metadata.matchId !== id) return false;
-	if (record?.info?.gameId !== undefined && String(record.info.gameId) !== id.split('_')[1])
-		return false;
-	const participants = record?.info?.participants;
-	if (participants !== undefined) {
-		if (!Array.isArray(participants) || !participants.length) return false;
-		if (
-			!participants.every(
-				(p) =>
-					p &&
-					typeof p === 'object' &&
-					['participantId', 'puuid', 'riotIdGameName', 'championId', 'championName', 'kills'].some(
-						(field) => p[field] !== undefined && p[field] !== null,
-					),
-			)
-		)
-			return false;
-	}
-	return linkId === id || (record?.metadata?.matchId === id && participants !== undefined);
+	return record?.status === 'no_data' && record.kind === kind && record.subject === subject;
 }
 
-function checkRankedQueue(result, row, url, expected, label = 'ranked') {
+// A match page links the ID; a participant row names it.
+function matchesGame(result, url, id) {
+	if (noDataFor(result, 'match', id)) return true;
+	const record = contentRecord(result.content);
+	const linkId = matchIdFromUrl(url);
+	if ((linkId && linkId !== id) || (record?.matchId !== undefined && record.matchId !== id))
+		return false;
+	return linkId === id || record?.matchId === id;
+}
+
+function checkRankedQueue(result, row, url, expected) {
 	const namedQueues = { 420: 'RANKED_SOLO_5X5', 440: 'RANKED_FLEX_SR' };
 	const queueInPath = /\/(RANKED_SOLO_5x5|RANKED_FLEX_SR)(?:\/|$)/i.exec(url?.pathname ?? '')?.[1];
 	const queues = [
@@ -237,14 +219,14 @@ function checkRankedQueue(result, row, url, expected, label = 'ranked') {
 		url?.searchParams.get('queueType'),
 		url?.searchParams.get('queueId'),
 	].filter((value) => value !== undefined && value !== null && value !== '');
-	requireEvidence(queues.length, 'Missing ' + label + ' queue ' + expected);
+	requireEvidence(queues.length, 'Missing leaderboard queue ' + expected);
 	assert(
 		queues.every(
 			(value) =>
 				(typeof value === 'string' || typeof value === 'number') &&
 				(namedQueues[value] ?? String(value).toUpperCase()) === expected.toUpperCase(),
 		),
-		'Unexpected ' + label + ' queue',
+		'Unexpected leaderboard queue',
 	);
 }
 
@@ -287,40 +269,45 @@ function checkLeaderboard(result, url, params) {
 			'Expected leaderboard division ' + params.division,
 		);
 	}
-	if (params.queue) checkRankedQueue(result, row, url, params.queue, 'leaderboard');
+	if (params.queue) checkRankedQueue(result, row, url, params.queue);
 }
 
-function matchesPlayer(result, url, params) {
-	const [name, tagline] = params.game_name.toLowerCase().split('#');
-	const region = params.region.toLowerCase();
-	const matchId = matchIdFromUrl(url);
-	if (matchId) {
-		const record = contentRecord(result.content);
-		const participants =
-			record?.info?.participants ??
-			(record?.riotIdGameName && record.championName && Number.isFinite(record.kills)
-				? [record]
-				: []);
-		const platform = platforms[region] ?? region.toUpperCase();
-		return (
-			matchId.split('_')[0] === platform &&
-			(!record?.metadata?.matchId || record.metadata.matchId === matchId) &&
-			Array.isArray(participants) &&
-			participants.some(
-				(p) =>
-					p.riotIdGameName?.toLowerCase() === name &&
-					(!tagline || p.riotIdTagline?.toLowerCase() === tagline),
-			)
-		);
-	}
+// Profile and mastery records carry the Riot ID of the requested player.
+function namesPlayer(result, gameName) {
+	const record = contentRecord(result.content) ?? {};
+	const [name, tagline] = String(gameName ?? '')
+		.toLowerCase()
+		.split('#');
+	return (
+		typeof record.gameName === 'string' &&
+		record.gameName.toLowerCase() === name &&
+		(typeof record.tagLine !== 'string' || !tagline || record.tagLine.toLowerCase() === tagline)
+	);
+}
+
+// A profile link names the player and its region.
+function isProfileLink(url, params) {
 	if (!fromHost(url, ['op.gg', 'leagueofgraphs.com', 'masterychart.com', 'u.gg'])) return false;
+	const [name, tagline] = params.game_name.toLowerCase().split('#');
 	const path = decodeURIComponent(url.pathname).replaceAll('+', ' ').toLowerCase();
 	const profile = /\/(?:summoners?|profile)\/([^/]+)\/([^/]+)\/?$/.exec(path);
 	return (
-		profile?.[1] === region &&
+		profile?.[1] === params.region.toLowerCase() &&
 		(tagline
 			? profile[2] === name + '-' + tagline
 			: profile[2] === name || profile[2].startsWith(name + '-'))
+	);
+}
+
+// A recent-match row names a match of the player's region.
+function isMatchRow(result, url, params) {
+	const matchId = matchIdFromUrl(url);
+	const record = contentRecord(result.content);
+	return (
+		Boolean(matchId) &&
+		matchId.split('_')[0] === (platforms[params.region] ?? params.region.toUpperCase()) &&
+		record?.matchId === matchId &&
+		typeof record.championName === 'string'
 	);
 }
 
@@ -486,7 +473,9 @@ function checkPaper(result, url, params) {
 	const filters = Object.keys(params).filter((key) => key !== 'sort');
 	const missing = new Set(filters);
 	if (params.doi) {
-		const match = matchesDoi(result, url, params.doi);
+		// A DOI lookup accepts a bare DOI, a doi: prefix, or an http(s)://doi.org/ URL.
+		const requested = params.doi.replace(/^(?:doi:|https?:\/\/doi\.org\/)/i, '');
+		const match = matchesDoi(result, url, requested);
 		if (match !== undefined) {
 			assert(match, 'Expected paper DOI ' + params.doi);
 			missing.delete('doi');
@@ -619,22 +608,56 @@ function checkDividend(result) {
 	return dividend && symbols.some((s) => /^[A-Z][A-Z0-9.-]*$/.test(s));
 }
 
+// Security code suffixes identify the CN and HK markets; an unsuffixed ticker is a US symbol.
+function impliedMarket(symbol) {
+	if (/^\d{6}\.(?:SH|SZ|BJ)$/i.test(symbol)) return 'CN';
+	if (/^\d{4,5}\.HK$/i.test(symbol)) return 'HK';
+	return /^[A-Z][A-Z\d.-]*$/.test(symbol) ? 'US' : undefined;
+}
+
+// Calendar parameters that the tickers of a record demonstrate.
+function calendarCheckedParameters(params, symbols) {
+	const checked = ['type'];
+	if (params.symbol) checked.push('symbol');
+	if (
+		params.market &&
+		symbols.length &&
+		symbols.every((value) => impliedMarket(value) === params.market)
+	)
+		checked.push('market');
+	return checked;
+}
+
+// Tickers that a calendar record exposes for the security it describes.
+function calendarSymbols(result, kind) {
+	const record = contentRecord(result.content) ?? {};
+	const title = String(result.title ?? '').trim();
+	const header = String(result.content ?? '').split(/\s*\|\s*/);
+	// The subject of an "AAPL earnings (2026-01-29)" title.
+	const caption = new RegExp(`\\(([A-Z][A-Z0-9.-]*)\\)\\s+${kind}\\b`, 'i').exec(title)?.[1];
+	return {
+		caption,
+		symbols: [
+			result.symbol,
+			result.cn_code,
+			result.ts_code,
+			record.symbol,
+			record.cn_code,
+			record.ts_code,
+			/^([A-Z0-9][A-Z0-9.-]*)\s+(?:earnings\b|财报披露|业绩日历)/i.exec(title)?.[1],
+			caption,
+			...header.map((s) => /^Symbol:\s*([A-Z0-9.-]+)$/i.exec(s)?.[1]),
+		].filter(Boolean),
+	};
+}
+
 function checkEarnings(result, params) {
 	const record = contentRecord(result.content) ?? {};
 	const title = String(result.title ?? '').trim();
-	const primaryTitle = /^([A-Z0-9][A-Z0-9.-]*)\s+(?:earnings\b|财报披露|业绩日历)/i.exec(title);
 	const header = String(result.content ?? '').split(/\s*\|\s*/);
-	const titleSubject = primaryTitle?.[1] ?? /\(([A-Z][A-Z0-9.-]*)\)\s+earnings\b/i.exec(title)?.[1];
-	const symbols = [
-		result.symbol,
-		result.cn_code,
-		result.ts_code,
-		record.symbol,
-		record.cn_code,
-		record.ts_code,
-		titleSubject,
-		...header.map((s) => /^Symbol:\s*([A-Z0-9.-]+)$/i.exec(s)?.[1]),
-	].filter(Boolean);
+	const { symbols, caption } = calendarSymbols(result, 'earnings');
+	const titleSubject =
+		/^([A-Z0-9][A-Z0-9.-]*)\s+(?:earnings\b|财报披露|业绩日历)/i.exec(title)?.[1] ?? caption;
 	const date = header.some((s) => /^Date:\s*\d{4}-\d{2}-\d{2}$/i.test(s));
 	const calendar =
 		/\bearnings calendar\b|财报披露|业绩日历/i.test(title) ||
@@ -645,7 +668,7 @@ function checkEarnings(result, params) {
 			record.date &&
 			(record.epsEstimated !== undefined || record.eps_estimated !== undefined));
 	assert(calendar, 'Expected an earnings calendar record');
-	const ticker = params.symbol || params.cn_code;
+	const ticker = params.symbol;
 	if (ticker)
 		assert(
 			symbols.length &&
@@ -655,32 +678,31 @@ function checkEarnings(result, params) {
 	return true;
 }
 
-function checkFinancialFlash(result, url, source) {
-	if (!Object.hasOwn(flashSources, source)) return undefined;
-	const error = 'Expected a financial flash from ' + source;
-	assert(fromHost(url, flashSources[source]), error);
-	const path = url.pathname;
-	// Publisher home pages, policy pages and section indexes carry no individual news item.
-	const feedItem =
-		/\/(?:livenews|telegraph|flash|brief)\/\d+(?:\.s?html)?\/?$/i.test(path) ||
-		(source === 'sina' &&
-			/\/(?:7x24|zhibo)\/(?:data\/)?[a-z\d-]*\d[a-z\d-]*(?:\.s?html)?$/i.test(path));
-	const article =
-		feedItem ||
-		/\/(?:articles?|news|detail|roll)\/(?:[^/]+\/)*\d+(?:\.s?html)?\/?$/i.test(path) ||
-		/\/(?:doc-[a-z\d]+|a?\d{10,}|c\d{7,})\.s?html$/i.test(path) ||
-		(source === 'fenghuang' && /\/c\/[A-Za-z\d]{7,}\/?$/.test(path));
-	assert(article, error);
-	const record = contentRecord(result.content) ?? {};
-	const kind =
-		result.source_kind ??
-		result.sourceKind ??
-		record.source_kind ??
-		record.sourceKind ??
-		/^SourceKind:\s*([\w-]+)\s*(?:\||$)/i.exec(result.content ?? '')?.[1];
-	if (kind) assert(/^(?:flash(?:[-_]news)?|news[-_]flash)$/i.test(kind), error);
-	// A publisher's ordinary article URL proves its source, but does not establish the flash category.
-	return feedItem || Boolean(kind);
+// Long-form articles carry no URL. The snippet is a metadata block whose lines name the
+// source, publication time and text length; a source without rows returns a coverage status.
+function checkLongFormNews(result, source) {
+	const snippet = String(result.snippet ?? '');
+	const coverage = /\bcoverage_status:\s*(\S+)/.exec(snippet)?.[1];
+	if (coverage)
+		throw new MissingEvidence('news_src ' + source + ' returned coverage_status ' + coverage);
+	const name = /(?:^|\|)\s*src=([^|]+)/.exec(snippet)?.[1]?.trim();
+	if (newsSourceNames[source]) {
+		assert(name === newsSourceNames[source], 'Expected a long_form article from ' + source);
+		return true;
+	}
+	requireEvidence(name, 'The long_form record for news_src ' + source + ' names no source');
+	return false;
+}
+
+// The domain selects the FAOSTAT table; the record spells out the other filters.
+function checkAgricultureStats(result, url, params) {
+	requireEvidence(fromHost(url, ['fao.org']), 'Not a FAOSTAT record for ' + params.item);
+	const text = [result.title, result.snippet, result.content].join('\n');
+	for (const field of ['item', 'area', 'partner', 'element', 'year']) {
+		if (params[field] !== undefined)
+			assert(text.includes(params[field]), 'Expected ' + field + ' ' + params[field]);
+	}
+	return true;
 }
 
 function checkPatentApplicant(result, requested) {
@@ -834,7 +856,7 @@ const datasetSources = {
 		/^\/articles\/(?:[a-z_]+\/)?[^/]+\/\d+(?:\/\d+)?\/?$/i,
 		/^10\.6084\/m9\.figshare\.\d+(?:\.v\d+)?$/i,
 	],
-	'bl.dryad': [
+	'dryad.dryad': [
 		'datadryad.org',
 		/^\/(?:stash\/)?dataset\/doi:10\.5061\/dryad\.[\w.-]+\/?$/i,
 		/^10\.5061\/dryad\.[\w.-]+$/i,
@@ -863,7 +885,8 @@ function checkInternationalFundamental(params, query, result) {
 		'Expected fundamentals for ' + symbol,
 	);
 
-	const period = params.period ?? 'annual';
+	// "Overview/estimates: annual or single_quarter."
+	const period = params.report_basis === 'single_quarter' ? 'quarter' : 'annual';
 	const periods = [
 		result.report_period,
 		record?.report_period,
@@ -891,8 +914,18 @@ function checkSelectedResult(tag, params, result, query) {
 	const url = sourceUrl(result.url);
 	if (tag === 'finance.fundamental' && params.type === 'overview')
 		return checkInternationalFundamental(params, query, result);
-	if (tag === 'finance.calendar' && params.type === 'dividends')
-		return checkDividend(result) && checkedAllParameters(params, ['type']);
+	if (tag === 'finance.calendar' && params.type === 'dividends') {
+		const dividend = checkDividend(result);
+		const { symbols } = calendarSymbols(result, 'dividend');
+		if (!params.symbol)
+			return dividend && checkedAllParameters(params, calendarCheckedParameters(params, symbols));
+		requireEvidence(symbols.length, 'The dividend record does not identify its ticker');
+		assert(
+			symbols.every((value) => String(value).toUpperCase() === String(params.symbol).toUpperCase()),
+			'Expected dividend calendar ticker ' + params.symbol,
+		);
+		return dividend && checkedAllParameters(params, calendarCheckedParameters(params, symbols));
+	}
 	if (tag === 'ip.global' && params.type === 'GlobalPatent' && params.applicant)
 		return (
 			checkPatentApplicant(result, params.applicant) &&
@@ -901,11 +934,21 @@ function checkSelectedResult(tag, params, result, query) {
 	if (tag === 'finance.calendar' && params.type === 'earnings')
 		return (
 			checkEarnings(result, params) &&
-			checkedAllParameters(params, ['type', params.symbol ? 'symbol' : 'cn_code'])
+			checkedAllParameters(
+				params,
+				calendarCheckedParameters(params, calendarSymbols(result, 'earnings').symbols),
+			)
 		);
-	if (tag === 'finance.news' && params.type === 'flash') {
-		const matches = checkFinancialFlash(result, url, params.news_src ?? 'sina');
-		return matches && checkedAllParameters(params, ['type', 'news_src']);
+	if (tag === 'finance.news' && params.type === 'long_form' && params.news_src)
+		return checkLongFormNews(result, params.news_src);
+	if (tag === 'gaming.store') {
+		requireEvidence(url, 'No Steam Store link for ' + query);
+		assert(fromHost(url, ['store.steampowered.com']), 'Expected a Steam Store page');
+		return true;
+	}
+	if (tag === 'agriculture.stats') {
+		checkAgricultureStats(result, url, params);
+		return true;
 	}
 	if (tag === 'social_media.social_media' && params.type) {
 		if (!Object.hasOwn(socialSources, params.type)) return undefined;
@@ -1004,19 +1047,15 @@ function checkSelectedResult(tag, params, result, query) {
 		return checkedAllParameters(params, ['jurisdiction', 'database_id', 'resource_kind']);
 	}
 	if (tag === 'academic.paper') return checkPaper(result, url, params);
-	if (tag === 'academic.citation' && (params.op ?? 'metadata') === 'metadata') {
-		const idIsDoi = params.id_type === 'doi' || /^10\.\d+(?:\.\d+)*\//.test(params.id);
-		const dois = new Set([idIsDoi ? params.id : undefined, params.doi].filter(Boolean));
-		for (const doi of dois) {
-			const match = matchesDoi(result, url, doi);
-			requireEvidence(match !== undefined, 'No record DOI available to verify ' + doi);
-			assert(match, 'Expected metadata for DOI ' + doi);
-		}
-		if (dois.size) {
-			const checked = ['op', 'doi'];
-			if (idIsDoi) checked.push('id', 'id_type');
-			return checkedAllParameters(params, checked);
-		}
+	if (
+		tag === 'academic.citation' &&
+		(params.op ?? 'metadata') === 'metadata' &&
+		/^10\.\d+(?:\.\d+)*\//.test(params.id)
+	) {
+		const match = matchesDoi(result, url, params.id);
+		requireEvidence(match !== undefined, 'No record DOI available to verify ' + params.id);
+		assert(match, 'Expected metadata for DOI ' + params.id);
+		return checkedAllParameters(params, ['op', 'id']);
 	}
 	if (tag === 'academic.person' && params.orcid) {
 		assert(matchesOrcid(result, url, params.orcid), 'Expected author ORCID ' + params.orcid);
@@ -1052,13 +1091,15 @@ function checkSelectedResult(tag, params, result, query) {
 			}
 			const inferredDataset =
 				params.resource_type.toLowerCase() === 'dataset' &&
-				(params.client_id === 'bl.dryad' ||
+				(params.client_id === 'dryad.dryad' ||
 					/^(?:the|this)\s+dataset\s+(?:contains|includes|provides|comprises|consists)\b/i.test(
 						String(result.snippet ?? '').trim(),
 					));
 			if (types.length || inferredDataset) checked.push('resource_type');
 		}
-		if (params.year_from !== undefined || params.year_to !== undefined) {
+		if (params.year !== undefined) {
+			// YYYY, YYYY-YYYY, YYYY- (lower bound) or -YYYY (upper bound).
+			const [start, end] = String(params.year).split('-');
 			const years = records
 				.flatMap((row) => [row.publicationYear, row.publication_year])
 				.filter(
@@ -1068,67 +1109,97 @@ function checkSelectedResult(tag, params, result, query) {
 				.map(BigInt);
 			if (years.length) {
 				assert(
-					years.every(
-						(year) =>
-							(params.year_from === undefined || year >= BigInt(params.year_from)) &&
-							(params.year_to === undefined || year <= BigInt(params.year_to)),
-					),
+					years.every((year) => (!start || year >= BigInt(start)) && (!end || year <= BigInt(end))),
 					'Dataset publication year is outside the requested range',
 				);
-				checked.push('year_from', 'year_to');
+				checked.push('year');
 			}
 		}
 		return checkedAllParameters(params, checked);
 	}
-	if (tag === 'gaming.esports' && params.type === 'match_detail') {
-		assert(matchesGame(result, url, params.match_id), 'Expected match ' + params.match_id);
-		return true;
-	}
-	if (tag === 'gaming.esports' && params.type === 'leaderboard') {
-		checkLeaderboard(result, url, params);
-		return true;
-	}
-	if (
-		tag === 'gaming.esports' &&
-		['player', 'ranked', 'mastery', 'live_game'].includes(params.type)
-	) {
-		assert(
-			matchesPlayer(result, url, params),
-			'Expected a profile or match record for ' + params.game_name,
-		);
-		const record = contentRecord(result.content) ?? result;
-		if (params.queue && (params.type === 'player' || params.type === 'ranked'))
-			checkRankedQueue(result, record, url, params.queue);
-		if (params.type === 'ranked')
-			return typeof record.tier === 'string' && Number.isFinite(record.leaguePoints);
-		if (params.type === 'live_game')
-			return Boolean(
-				record.gameId &&
-				record.gameStartTime &&
-				Array.isArray(record.participants) &&
-				record.participants.length,
+	if (tag === 'gaming.esports') {
+		const type = params.type;
+		if (type === 'match_detail') {
+			assert(matchesGame(result, url, params.match_id), 'Expected match ' + params.match_id);
+			return true;
+		}
+		if (type === 'leaderboard') {
+			checkLeaderboard(result, url, params);
+			return true;
+		}
+		// The query is the champion name.
+		if (type === 'champion') {
+			const record = contentRecord(result.content);
+			requireEvidence(record, 'No champion record for ' + query);
+			const key = (value) =>
+				String(value)
+					.toLowerCase()
+					.replace(/[^a-z]/g, '');
+			requireEvidence(
+				[record.name, record.id].some((value) => key(value) === key(query)),
+				'The champion record does not confirm ' + query,
 			);
-		if (params.type === 'mastery') {
-			const champion =
-				typeof record.championName === 'string' && Number.isFinite(record.championPoints)
-					? record.championName.toLowerCase()
-					: undefined;
-			const entries = [result.snippet, result.content].flatMap((text) =>
-				[...String(text ?? '').matchAll(/(?:^|;)\s*([^,;]+),\s*\d+,\s*[\d,]+\s+pts\b/gi)].map(
-					(row) => row[1].trim().toLowerCase(),
-				),
+			return true;
+		}
+		// The query is the item name.
+		if (type === 'item') {
+			if (noDataFor(result, 'item', query)) return true;
+			const record = contentRecord(result.content);
+			requireEvidence(record, 'No item record for ' + query);
+			assert(
+				String(record.name).toLowerCase() ===
+					String(query ?? '')
+						.trim()
+						.toLowerCase(),
+				'Expected item ' + query,
 			);
-			if (params.champion) {
-				const observed = champion ? [champion, ...entries] : entries;
-				requireEvidence(observed.length, 'No champion mastery records for ' + params.champion);
+			return true;
+		}
+		if (type === 'champion_rotation' && params.region) {
+			requireEvidence(url, 'No champion rotation link for region ' + params.region);
+			assert.equal(
+				url.searchParams.get('region'),
+				params.region.toLowerCase(),
+				'Expected the champion rotation of region ' + params.region,
+			);
+			return true;
+		}
+		// A recent-match row names its match and region but not the player.
+		if (type === 'player') {
+			const profile = isProfileLink(url, params);
+			assert(
+				profile || isMatchRow(result, url, params),
+				'Expected a profile or match record for ' + params.game_name,
+			);
+			requireEvidence(profile, 'Recent match rows do not identify the player');
+			return true;
+		}
+		if (['ranked', 'mastery', 'live_game'].includes(type)) {
+			const record = contentRecord(result.content) ?? {};
+			// A record that names a player must name the requested one, and so must its link.
+			assert(
+				(typeof record.gameName !== 'string' || namesPlayer(result, params.game_name)) &&
+					(!url || isProfileLink(url, params)),
+				'Expected a profile record for ' + params.game_name,
+			);
+			if (type === 'ranked')
+				return typeof record.tier === 'string' && Number.isFinite(record.leaguePoints);
+			// Only the answer for a player who is not in a game has been observed.
+			if (type === 'live_game') {
+				if (record.inGame === false) return true;
+				throw new MissingEvidence('No live-game details for ' + params.game_name);
+			}
+			requireEvidence(
+				typeof record.championName === 'string' && Number.isFinite(record.points),
+				'No mastery record for ' + params.game_name,
+			);
+			if (params.champion)
 				assert(
-					observed.every((name) => name.includes(params.champion.toLowerCase())),
+					record.championName.toLowerCase() === params.champion.toLowerCase(),
 					'Expected mastery filtered to champion ' + params.champion,
 				);
-			}
-			return Boolean(champion || entries.length);
+			return true;
 		}
-		return true;
 	}
 	// No operation-specific assertion covers this request.
 	return undefined;

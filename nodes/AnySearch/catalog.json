@@ -1,78 +1,46 @@
 {
   "reviewed": "2026-11-27",
   "source": "https://api.anysearch.com/v1/sub-domains",
-  "topology_version": 27,
+  "topology_version": 24,
   "tags": {
     "academic.citation": {
-      "category": {
-        "required": false,
-        "description": "Subject category, comma-separated multi-value. Valid values (22): `Computer Science`, `Medicine`, `Biology`, `Chemistry`, `Physics`, `Mathematics`, `Materials Science`, `Engineering`, `Environmental Science`, `Geology`, `Geography`, `Sociology`, `Psychology`, `Economics`, `Business`, `Political Science`, `Linguistics`, `Philosophy`, `History`, `Art`, `Education`, `Law`."
-      },
-      "doi": {
-        "required": false,
-        "description": "DOI identifier, e.g. 10.1038/s41586-021-03819-2"
-      },
       "filter": {
         "required": false,
-        "description": "RAMOSE filter expression. Format: `field:value`, e.g., `creation:2020-*-*` (citations after 2020)."
+        "description": "Provider filter expression for citations and references only. Use comma-separated field:value expressions, for example creation:>2020,author_sc:no. Supported fields: oci, citing, cited, creation, timespan, journal_sc and author_sc."
       },
       "id": {
-        "required": true,
-        "description": "Persistent identifier value extracted from user input. Do NOT include type prefixes like \"doi:\" or \"pmid:\". Formats: DOI (e.g. 10.1038/s41586-021-03819-2), PMID (pure digits, e.g. 33817056), ISSN (e.g. 0138-9130), ISBN (e.g. 9781402096327), ORCID (e.g. 0000-0003-0530-4305), OMID (e.g. br/06101801781), OCI (digits-digits, e.g. 06101801781-06180334099, only for op=citation)."
-      },
-      "id_type": {
         "required": false,
-        "description": "Identifier type. Values: `doi`, `pmid`, `issn`, `isbn`, `orcid`, `omid`. When empty, auto-detected from query format (e.g., `10.xxx/yyy` → doi, pure digits → pmid)."
-      },
-      "min_citations": {
-        "required": false,
-        "description": "Minimum citation count, non-negative integer string, e.g., `100`. Used for academic quality filtering"
+        "description": "Bare persistent identifier. Required for exact metadata lookup and all structured operations except metadata keyword search. Formats: DOI, PMID, ISSN, ISBN, ORCID, OMID or OCI. ISSN and ISBN check digits are validated; an invalid checksum or the reserved ISSN 0000-0000 returns PARAM_INVALID. For op=citation, pass the OCI in id."
       },
       "op": {
         "required": false,
-        "description": "Operation type. Values: `metadata` (metadata query, default), `citations` (cited-by list), `references` (reference list), `citation-count` (citation count), `reference-count` (reference count), `author` (works by author), `editor` (works by editor), `venue-citation-count` (journal citation count), `citation` (single citation relationship, requires OCI)"
-      },
-      "open_access": {
-        "required": false,
-        "description": "Whether open access. Valid values: true, false"
+        "description": "Operation type. Values: `metadata` (metadata query, default), `citations` (cited-by list), `references` (reference list), `citation-count` (citation count), `reference-count` (reference count), `author` (works by author), `editor` (works by editor), `venue-citation-count` (journal citation count), `citation` (single citation relationship, requires OCI). Identifier support: metadata = DOI/PMID/ISSN/ISBN/OMID; citations, references, citation-count and reference-count = DOI/PMID/OMID (reference-count also ISSN); author and editor = ORCID/OMID; venue-citation-count = ISSN; citation = OCI. For citations or references above 100,000 records, the tool returns a TOO_MANY_CITATIONS summary with the total; use citation-count or reference-count, or add filter/sort to narrow the query."
       },
       "sort": {
         "required": false,
-        "description": "RAMOSE sort expression. Format: `field:order`, e.g., `creation:desc` (descending by creation time)."
+        "description": "Single provider sort expression for citations and references only. Use field:order form, for example creation:desc. Supported fields: oci, citing, cited, creation, timespan, journal_sc and author_sc."
       },
       "type": {
         "required": false,
-        "description": "1. Document type filter. Values: `journal-article` (journal paper), `book` (book), `proceedings-article` (conference paper), `dataset` (dataset), `book-chapter` (book chapter), `posted-content` (preprint), `report` (report), etc. Maps to Crossref `filter=type:{value}`. 2. Publication type, comma-separated multi-value (no spaces). Valid values (13): `JournalArticle`, `Conference`, `Review`, `CaseReport`, `ClinicalTrial`, `Dataset`, `Editorial`, `LettersAndComments`, `MetaAnalysis`, `News`, `Study`, `Book`, `BookSection`. Maps to `publicationTypes` parameter."
+        "description": "Publication type for metadata keyword search only with id empty. Values: journal_article, conference_paper, book, book_chapter, preprint, dataset, report, thesis, monograph, edited_book, standard, component and journal_issue. Comma-separated multi-value without spaces."
       },
-      "venue": {
+      "year": {
         "required": false,
-        "description": "Journal/conference name, comma-separated multi-value. Must match S2 database exactly. Common values: `NeurIPS`, `ICML`, `ICLR`, `CVPR`, `Nature`, `Science`, `Cell`, `Lancet`."
-      },
-      "year_from": {
-        "required": false,
-        "description": "Publication date lower bound. Format `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`."
-      },
-      "year_to": {
-        "required": false,
-        "description": "Publication date upper bound. Format `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`."
+        "description": "Publication year for metadata keyword search only with id empty. Format YYYY, YYYY-YYYY, YYYY- for a lower bound or -YYYY for an upper bound."
       }
     },
     "academic.dataset": {
       "client_id": {
         "required": false,
-        "description": "Data repository identifier. Examples: `cern.zenodo` (Zenodo), `figshare.ars` (Figshare), `bl.dryad` (Dryad)."
+        "description": "Exact DataCite client identifier. Examples: cern.zenodo for Zenodo, figshare.ars for Figshare and dryad.dryad for Dryad."
       },
       "resource_type": {
         "required": false,
-        "description": "Resource type filter. Values: `Dataset` (datasets), `Software` (software), `Text` (text), `Image` (images), `Audiovisual` (audio/video), `Collection` (collections), `InteractiveResource` (interactive resources), etc."
+        "description": "Single DataCite resource type. Values: Audiovisual, Book, BookChapter, Collection, ComputationalNotebook, ConferencePaper, ConferenceProceeding, DataPaper, Dataset, Dissertation, Event, Image, InteractiveResource, Instrument, Journal, JournalArticle, Model, OutputManagementPlan, PeerReview, PhysicalObject, Preprint, Report, Service, Software, Sound, Standard, StudyRegistration, Text, Workflow and Other. Multi-word values are case-insensitive and accept both the DataCite label (e.g. InteractiveResource) and kebab-case (e.g. interactive-resource)."
       },
-      "year_from": {
+      "year": {
         "required": false,
-        "description": "Publication year lower bound (inclusive), e.g., `2020`."
-      },
-      "year_to": {
-        "required": false,
-        "description": "Publication year upper bound (inclusive), e.g., `2024`."
+        "description": "Publication year constraint. Format YYYY (single year), YYYY-YYYY (range), YYYY- (lower bound) or -YYYY (upper bound)."
       }
     },
     "academic.paper": {
@@ -82,7 +50,7 @@
       },
       "doi": {
         "required": false,
-        "description": "Exact DOI lookup. Return the paper whose DOI matches the supplied value."
+        "description": "Exact DOI lookup. Accept a bare DOI, a doi: prefix, or an http(s)://doi.org/ URL. Return the paper whose DOI matches the supplied value; other filters are ignored."
       },
       "language": {
         "required": false,
@@ -135,26 +103,30 @@
         "description": "Comma-separated additional institution constraints, treated together with affiliations (no separate education-history data)."
       }
     },
-    "agriculture.fao": {
-      "date_start": {
+    "agriculture.stats": {
+      "area": {
         "required": false,
-        "description": "2023 (year)"
+        "description": "Country/region name or FAOSTAT area code. Use World for global aggregates; default is World. Examples: World, China, Brazil, Ethiopia, India."
       },
       "domain": {
         "required": false,
-        "description": "production / trade / prices (data domain)"
+        "description": "Optional data domain: production | trade | prices | inputs | land | emissions | food_security | population | investment | forestry | census | other."
       },
-      "keyword": {
+      "element": {
         "required": false,
-        "description": "wheat production / rice trade (search keyword)"
+        "description": "Measure/statistic of the item. Examples: Production, Yield, Area harvested, Average area, Import quantity, Export quantity, Agricultural Use, Value US$, Total Population - Both sexes, Rural population, Number, Area, Producer Price Index (2014-2016 = 100), 5510. Omit element to return all measures."
       },
-      "location": {
-        "required": false,
-        "description": "World / China (region name)"
+      "item": {
+        "required": true,
+        "description": "Required. Entity being measured: commodity, category, or indicator. Pass only the entity name OR its FAOSTAT code, not the name and code combined, and do not include the measure/element, year, or a full sentence. Wrong: Wheat (15) or Average area of holdings. Correct: Wheat or 15; Holdings with element Average area. Examples (name or code): Wheat / 15, Maize (corn) / 56, Soya beans / 236, Emissions from crops / 5084, 2.1.1 Prevalence of undernourishment / 24000, FDI inflows to Agriculture, Forestry and Fishing / 23080, Population - Est. & Proj. / 3010, Holdings / 27002, Wood charcoal / 1630, Coffee, green / 656. The service resolves aliases and fuzzy names. For domain=other, item examples (name or code): Total Bioenergy / 6527, Net Capital Stocks / 22034, Gross Domestic Product / 22008."
       },
-      "type": {
+      "partner": {
         "required": false,
-        "description": "GlobalAgriculture (global agriculture data)"
+        "description": "Partner country for bilateral trade. Required to query the detailed trade matrix (TM); aggregate trade uses TCL. Examples: Argentina, Brazil, China."
+      },
+      "year": {
+        "required": false,
+        "description": "Year or comma-separated years. Default is the latest observed year; pass an explicit year such as 2050 only when projections are intended. For population/projection-only data (e.g. Population - Est. & Proj.), no observed year exists, so an explicit year such as 2024 is required. Examples: 2024, 2020,2021,2022."
       }
     },
     "business.company": {
@@ -244,9 +216,13 @@
         "required": false,
         "description": "Filter by file path pattern, e.g. src/components/"
       },
+      "regex": {
+        "required": false,
+        "description": "Treat query as a regular expression. Omit to auto-detect; true forces regex, false forces literal search."
+      },
       "repo": {
         "required": false,
-        "description": "Filter by GitHub repository, e.g. facebook/react"
+        "description": "Filter by code repository, e.g. org/repository."
       }
     },
     "energy.electricity": {
@@ -296,149 +272,306 @@
     "environment.aqi": {
       "location": {
         "required": false,
-        "description": "20002 / 38.9,-77.0 / Beijing (zip code / coordinates / city name)"
-      },
-      "type": {
-        "required": false,
-        "description": "GlobalAirQuality (global air quality)"
+        "description": "One place name or \"lat,lng\" (e.g. \"Beijing\", \"38.9,-77.0\", \"Beijing,Shanghai\"); up to 3 locations, separated by comma, semicolon, Chinese comma, or \"and\". Invalid coordinates (out of range, elevation, single number, numeric-only lists) return PARAM_INVALID; a numeric token mixed with a name (e.g. \"Beijing;38.9\") is ignored. State/country names are fuzzy-matched (may return nearby or other-region stations); landmarks, POIs and postcodes are not resolved (treated as keywords). If omitted, the query text is used as the location (plain place names work best)."
       }
     },
     "film.torrent": {},
     "finance.calendar": {
-      "cn_code": {
+      "currency": {
         "required": false,
-        "description": "A-share ticker, used when type=earnings. E.g., 600519.SH. When empty, returns market-wide schedule."
+        "description": "ISO 4217 currency filter for economic calendar."
+      },
+      "date_range": {
+        "required": false,
+        "description": "YYYY-MM-DD..YYYY-MM-DD, inclusive. Explicit bounds take priority over period. ..end anchors the period/default window at end. Forward-window paths use start as the first day. A truncated page may contain only one busy day even when the query spans several days."
+      },
+      "date_type": {
+        "required": false,
+        "description": "CN earnings: announcement/pre/actual; dividends: announcement/implementation/record/ex/payment; IPOs: subscription/listing. US earnings dates follow announcement schedules; pre/actual may share rows. US dividends: announcement/record/ex/payment; IPOs: listing. CN actions: announcement; unlock also float. Pledge announcement selects detail records; the default pledge snapshot uses weekly report dates."
+      },
+      "event": {
+        "required": false,
+        "description": "Event text filter for economic calendar."
+      },
+      "event_type": {
+        "required": false,
+        "description": "corporate_action: repurchase, holder_trade, pledge, unlock. Each holder/action record is a distinct row. Without date_type=announcement, pledge uses the latest published weekly pledge report date within the window. Required when type=corporate_action."
+      },
+      "exchange": {
+        "required": false,
+        "description": "trade_cal exchange: SSE, SZSE, CFFEX, SHFE, CZCE, DCE or INE. Required when type=trade_cal."
+      },
+      "market": {
+        "required": false,
+        "description": "Values: CN, HK, US, GLOBAL. GLOBAL combines provider coverage; per-row market/currency identify the security or event, and timezone is provided when known."
       },
       "period": {
         "required": false,
-        "description": "Forward-looking time range. Default 7d; for type=earnings always pass 90d. Valid values same as quote."
+        "description": "Relative window: 7d, 30d, 90d or positive Nd. US calendar paths allow up to 90 inclusive days; split longer requests. Default: US earnings 90d, other calendar paths 7d. US earnings/economic windows are forward-looking from today; use an explicit past start_date to include recent past events. CN report_period queries use the report period."
+      },
+      "report_period": {
+        "required": false,
+        "description": "CN earnings/forecast/express report period: YYYY, YYYYQn or quarter-end date."
       },
       "symbol": {
         "required": false,
-        "description": "Stock ticker, used only when type=earnings. E.g., NVDA, AAPL. When empty, returns market-wide schedule."
+        "description": "Optional security code for company-specific earnings, dividends or actions."
       },
       "type": {
         "required": true,
-        "description": "Calendar type: earnings, dividends, ipos, economic. For earnings, pass symbol or cn_code. dividends is market-wide international only — symbol and cn_code do not apply."
+        "description": "Values: earnings, dividends, ipos, economic, forecast, express, trade_cal, corporate_action. CN supports all eight; US earnings/dividends/ipos/economic; HK dividends/economic and best-effort earnings/ipos. GLOBAL is limited."
       }
     },
     "finance.fundamental": {
-      "cn_code": {
+      "aggregation": {
+        "required": false,
+        "description": "ratings: consensus (default) or individual. estimates: consensus. Individual ratings are provider records; the response is capped at 50 records and exposes grades_truncated and grades_total_count."
+      },
+      "date_range": {
+        "required": false,
+        "description": "YYYY-MM-DD..YYYY-MM-DD. ..end uses the period/default window ending at end. CN report queries use announcement dates where available; US report queries use filing dates. Read request_date_semantics and as_of."
+      },
+      "document_type": {
+        "required": false,
+        "description": "US regulatory_filing: annual/quarterly map to 10-K/10-Q; raw SEC form codes such as 8-K are accepted."
+      },
+      "market": {
         "required": true,
-        "description": "A-share ticker — the identifier for type=income/balance/cashflow/indicator/holder. E.g., 600519.SH. For type=overview pass \"\"."
+        "description": "Values: CN, HK, US. CN holder; US regulatory_filing."
+      },
+      "metric_ids": {
+        "required": false,
+        "description": "For metrics: comma-separated IDs, case-insensitive, such as pe_ttm,pb,roe,roe_waa. Result roe_basis identifies the provider calculation."
       },
       "period": {
         "required": false,
-        "description": "Read only by type=overview (annual or quarter, default annual; these are different fiscal scopes — annual = latest full year, quarter = latest single quarter) and type=holder (time range, default 1y). Not used by the other four types."
+        "description": "Lookback for holder/fund_holding, used instead of report_period. Fund holdings are a current data snapshot; time windows do not provide historical pagination."
+      },
+      "report_basis": {
+        "required": false,
+        "description": "Values: single_quarter, cumulative, annual, ttm. Overview/estimates: annual or single_quarter. income/cashflow: all four. balance: annual or single_quarter. Default reports are annual; an explicit quarterly report_period selects quarterly source data. TTM sums four quarterly reports locally; as_of is the last report-period end."
+      },
+      "report_period": {
+        "required": false,
+        "description": "Exact period: YYYY, YYYYQn or YYYY-MM-DD. US statement year/quarter uses supplied fiscal metadata; estimate year/quarter matches the provider period-end date when fiscal metadata is absent. Estimates with no period select one nearest upcoming period, or the latest past period."
+      },
+      "selection": {
+        "required": false,
+        "description": "For income/balance/cashflow/holder: latest (default) or report_end_date together with report_period. When selection=report_end_date, report_period is required."
       },
       "symbol": {
         "required": true,
-        "description": "International market ticker — the identifier for type=overview. E.g., AAPL. When empty it is parsed from the query. For type=income/balance/cashflow/indicator/holder pass \"\"."
+        "description": "Security code such as AAPL, 0700.HK or 600000.SH. fund_holding uses a fund/ETF such as SPY, 2800.HK or 510300.SH."
       },
       "type": {
         "required": true,
-        "description": "Data type: overview, income, balance, cashflow, indicator, holder. indicator returns valuation and profitability ratios (ROE, PE, margins)."
+        "description": "Values: overview, income, balance, cashflow, metrics, ratings, estimates, holder, fund_holding, regulatory_filing. CN income/balance/cashflow/metrics/holder/fund_holding; CN overview/estimates are available where covered. US/HK overview/income/balance/cashflow/metrics/ratings/estimates/fund_holding; US regulatory_filing."
       }
     },
     "finance.macro": {
+      "date_range": {
+        "required": false,
+        "description": "Observation window YYYY-MM-DD..YYYY-MM-DD. start.. runs to the current period; ..end computes the period/default start from end."
+      },
+      "market": {
+        "required": true,
+        "description": "Values: CN, US."
+      },
+      "measure": {
+        "required": false,
+        "description": "US indicators: level. CN GDP: level/yoy/cumulative/period (level/cumulative YTD, period single-quarter); CPI: level/yoy/mom/cumulative; PMI/SHIBOR/LPR: level; money_supply: level/yoy/mom; social_finance: level/cumulative/period. Default level."
+      },
       "period": {
         "required": false,
-        "description": "Data time range. Default varies by type: gdp defaults to `2y`, cpi/lpr/money_supply/social_finance defaults to `1y`, shibor defaults to `30d`, US indicators truncated by maxResults. Valid values same as quote"
+        "description": "Supported values: 7d, 14d, 30d, 45d, 90d, 180d, 365d. These are the only supported period values. Explicit date bounds take priority. Monthly/quarterly indicators use observation periods, so recent short windows can be empty before publication."
+      },
+      "tenor": {
+        "required": false,
+        "description": "SHIBOR: overnight/on, 1w, 2w, 1m, 3m, 6m, 9m, 1y. LPR: 1y, 5y."
       },
       "type": {
         "required": true,
-        "description": "Indicator type. Values: `gdp` (China & US GDP), `cpi` (China & US CPI), `fed_funds` (Federal Funds Rate), `treasury` (US Treasury yield curve 1M~30Y), `unemployment` (US unemployment rate), `nonfarm` (US nonfarm payrolls), `shibor` (China interbank rates), `lpr` (China LPR loan rates), `money_supply` (China M0/M1/M2), `social_finance` (China aggregate social financing)"
+        "description": "Values: gdp, cpi, pmi, fed_funds, unemployment, nonfarm, shibor, lpr, money_supply, social_finance. US: gdp/cpi/fed_funds/unemployment/nonfarm. CN: gdp/cpi/pmi/shibor/lpr/money_supply/social_finance."
       }
     },
     "finance.news": {
-      "cn_code": {
+      "content_scope": {
         "required": false,
-        "description": "A-share ticker, used only when type=announcement. E.g., `600519.SH`. When empty, returns market-wide announcements"
+        "description": "Closed enum: summary, full_text. The full_text option returns the text supplied by the provider; stock news may contain only a provider excerpt. For long_form, query is intent only and does not filter results. content_original_length and content_truncated describe the available provider text and any local shortening."
+      },
+      "date_range": {
+        "required": false,
+        "description": "News window YYYY-MM-DD..YYYY-MM-DD; datetime values are normalized where supported. `start..` has no end; `..end` uses the default window ending at end. Historical coverage is limited to available provider candidates."
+      },
+      "market": {
+        "required": false,
+        "description": "Closed enum: CN, HK, US, GLOBAL. Supported: general/stock/transcript for US/GLOBAL; long_form for CN/GLOBAL."
       },
       "news_src": {
         "required": false,
-        "description": "Chinese flash news source, used only when type=flash. Default `sina`. Values: `sina` (Sina Finance), `wallstreetcn` (Wallstreetcn), `10jqka` (Tonghuashun), `eastmoney` (East Money), `cls` (Cailian Press), `yicai` (Yicai), `yuncaijing` (Cloud Finance), `fenghuang` (Phoenix Finance), `jinrongjie` (Financial Street)"
+        "description": "Optional source filter for long_form sources: sina, cls, 10jqka, wallstreetcn, xinhua, fenghuang, cs, caixin, yicai."
       },
       "period": {
         "required": false,
-        "description": "Query time range. type=flash/announcement defaults to `1d` (current day). Valid values same as quote"
+        "description": "Relative news window such as 7d or 30d."
+      },
+      "report_period": {
+        "required": false,
+        "description": "Fiscal period YYYYQn, required when type=transcript; pair with symbol. Other news types use publication dates instead."
       },
       "symbol": {
         "required": false,
-        "description": "International market ticker, used only when type=stock. E.g., `AAPL`. When empty, parsed from query"
+        "description": "Security code for stock or transcript. Required for stock/transcript; omitted for general/long_form."
       },
       "type": {
         "required": true,
-        "description": "News type. Values: `general` (global English financial news), `stock` (international single-stock news), `flash` (Chinese financial headlines), `announcement` (A-share listed company announcements)"
+        "description": "Closed enum: general, stock, transcript, long_form. general/stock/transcript support US/GLOBAL; long_form supports CN/GLOBAL as best effort."
       }
     },
     "finance.quote": {
-      "cn_code": {
+      "adjustment": {
         "required": false,
-        "description": "Chinese market symbol. type=stock: e.g., `000001.SZ`, `600519.SH`; type=index: e.g., `399300.SZ`; type=etf: e.g., `510300.SH`; type=forex: e.g., `USDCNH.FXCM`"
+        "description": "Values: none, qfq, hfq. qfq/hfq apply to CN stock history; latest_available uses raw quotes."
+      },
+      "date_range": {
+        "required": false,
+        "description": "YYYY-MM-DD..YYYY-MM-DD. History start.. runs to today; ..end uses period/default lookback. US minute closed bounds filter bars; minute start.. selects that day; minute ..end selects the latest day with bars within seven days ending at end when period is absent. Group/trading snapshots use the right bound; without an explicit right bound, US sector snapshots fall back to the prior trading day. Future minute/snapshot dates have no_data."
+      },
+      "frequency": {
+        "required": false,
+        "description": "US stock/ETF minute: 1m. History: 1d, 1w, 1mo."
+      },
+      "market": {
+        "required": true,
+        "description": "Values: CN, HK, US, GLOBAL. CN/US/HK identify security markets; GLOBAL identifies forex, crypto and commodity. GLOBAL applies to forex, crypto and commodity."
+      },
+      "nav_type": {
+        "required": false,
+        "description": "Fund NAV (type=fund, operation=nav): unit or adjusted."
+      },
+      "operation": {
+        "required": false,
+        "description": "Values: latest_available (default), history, minute, nav, fund_profile, group_performance, moneyflow, margin, trading_activity. US group_performance uses no symbol and defaults to the latest trading-day snapshot; a holiday falls back to the prior trading day. CN group_performance uses an index symbol and returns one daily snapshot. Convertible-bond latest_available covers active bonds only. Group/trading snapshots use date_range=..YYYY-MM-DD as their date. US stock/ETF minute uses 1m bars and optional date_range; omit the range for the latest available day in a seven-calendar-day lookback."
       },
       "period": {
         "required": false,
-        "description": "Historical data time range. Values: `7d`/`14d`/`30d`/`90d`/`180d`/`1y`/`5y` or custom `{N}d`. International markets default `7d`, Chinese markets default `30d`"
+        "description": "Lookback such as 7d, 30d, 90d, 1y or positive Nd. Explicit date bounds take priority. Split slow CN adjusted history into short intervals. US sector snapshots use date_range=..date."
       },
       "symbol": {
         "required": false,
-        "description": "International market symbol. type=stock: e.g., `AAPL`; type=forex: e.g., `EURUSD` (6-char pair); type=crypto: e.g., `BTCUSD` (required); type=commodity: e.g., `CLUSD` (empty returns market snapshot)"
+        "description": "Security or asset code: AAPL, 0700.HK, 600000.SH, ^GSPC, BRK-B (BRK.B alias), EURUSD, BTCUSD, IF2612.CFX, 110011.OF. Security-level operations and CN index snapshots use symbol. US sector snapshots and commodity-wide snapshots omit it. Required for security-level quote operations."
       },
       "type": {
         "required": true,
-        "description": "Asset type. Values: `stock` (global stocks + A-shares), `forex` (foreign exchange), `crypto` (cryptocurrency), `commodity` (commodities), `index` (Chinese indices), `etf` (Chinese ETFs)"
+        "description": "Values: stock, etf, fund, index, forex, crypto, commodity, futures, convertible_bond. CN stock/ETF/index/fund/futures/convertible_bond; US stock/ETF/index and fund_profile; HK stock and provider-limited ETF; GLOBAL forex/crypto/commodity."
       }
     },
     "finance.screen": {
-      "country": {
+      "dividend_yield": {
         "required": false,
-        "description": "ISO 3166-1 alpha-2 country code, used only when type=stock. E.g., `US`, `JP`, `GB`, `DE`, `CN`, `HK`. Note: filters by company registration country, not exchange country"
+        "description": "Stock dividend yield percentage range min..max, 0..100."
+      },
+      "exchange": {
+        "required": false,
+        "description": "Stock exchange filter such as NASDAQ, NYSE, AMEX, SSE or BSE."
+      },
+      "industry": {
+        "required": false,
+        "description": "Stock industry name/code. CN prefers SW2021:801080.SI or SW2014:801080.SI; unknown or empty member sets yield no_data."
+      },
+      "market": {
+        "required": true,
+        "description": "Values: CN, HK, US, GLOBAL. GLOBAL combines the provider candidate set, which may be US-heavy; it is not exhaustive worldwide coverage."
+      },
+      "market_cap": {
+        "required": false,
+        "description": "Stock min..max range. CN: CNY 10k units, e.g. 1000000..100000000; US: USD, e.g. 1e9..5e10. Open bounds allowed."
+      },
+      "page": {
+        "required": false,
+        "description": "One-based page for stock/ETF/index_weight. Pass max_results at the search tool top level and use the same value for successive pages. Provider candidate limits still apply. When more matching rows remain, has_more=true, truncated=true and coverage_status=truncated; the final page has has_more=false and truncated=false."
+      },
+      "pe": {
+        "required": false,
+        "description": "Stock PE TTM range min..max, e.g. 0..30. pe_ttm is the filter basis; static pe may differ."
+      },
+      "registration_country": {
+        "required": false,
+        "description": "ISO 3166-1 alpha-2 company registration country for stock screening."
+      },
+      "roe": {
+        "required": false,
+        "description": "Stock ROE percentage range min..max. CN uses roe_waa when available, otherwise roe; US screening uses roe_ttm. Output roe and roe_basis reflect the same value used for filtering and sorting."
       },
       "sector": {
         "required": false,
-        "description": "GICS sector, used only when type=stock. Values: `Technology`, `Healthcare`, `Financial Services`, `Consumer Cyclical`, `Consumer Defensive`, `Industrials`, `Energy`, `Basic Materials`, `Communication Services`, `Real Estate`, `Utilities`"
+        "description": "Stock sector using accepted sector names or GICS aliases: Health Care -> Healthcare, Information Technology -> Technology, Financials -> Financial Services, Materials -> Basic Materials, Consumer Discretionary -> Consumer Cyclical, Consumer Staples -> Consumer Defensive."
+      },
+      "snapshot_date": {
+        "required": false,
+        "description": "CN stock valuation snapshot date YYYY-MM-DD. Data availability follows provider publication dates."
+      },
+      "sort": {
+        "required": false,
+        "description": "Stock sort: market_cap, pe_ttm, dividend_yield or roe; prefix - for descending; default -market_cap. For ETF asset or dividend-yield ranking, express intent in top-level query (e.g. 'largest US ETFs by AUM'); ranked rows identify sort_metric."
+      },
+      "symbol": {
+        "required": false,
+        "description": "Index code required when type=index_weight; optional security lookup for stock/ETF."
       },
       "type": {
         "required": true,
-        "description": "Screen type. Values: `stock` (screen stocks by sector/country), `etf` (search ETFs by name, query used as filter)"
+        "description": "Values: stock, etf, index_weight. CN/US stock and ETF lists; HK/GLOBAL provider-limited coverage; CN index_weight returns one row per constituent."
       }
     },
     "gaming.esports": {
       "champion": {
         "required": false,
-        "description": "Champion name substring filter. Matches any champion whose name contains the value, e.g., \"Lee\" matches Lee Sin, \"vi\" matches Vi and Sivir. If omitted, returns top count champions across all. Used with: mastery. E.g., \"Yasuo\""
+        "description": "Mastery only: champion name filter, e.g. Ahri"
+      },
+      "count": {
+        "required": false,
+        "description": "Mastery only: result count, default max_results"
       },
       "division": {
         "required": false,
-        "description": "Subdivision within a tier. Only meaningful when tier is DIAMOND through IRON. Defaults to I if tier is set but division is omitted. Values: `I`, `II`, `III`, `IV`. Used with: leaderboard (requires tier). E.g., \"II\""
+        "description": "Only with DIAMOND-IRON tier: I | II | III | IV, default I"
       },
       "game_name": {
         "required": false,
-        "description": "Player's Game ID. Supports two formats: with tagLine embedded via \"#\" separator (e.g., \"Hide on Bush#KR1\", region is still required for API routing) or without tagLine (e.g., \"Tyler1\", default tagLine for that server is inferred automatically from region). Required for: player, ranked, mastery, live_game. E.g., \"Faker#KR1\""
+        "description": "Riot ID with tag line, e.g. Hide on bush#KR1. The tag is required; without it the request is rejected."
       },
       "match_id": {
         "required": false,
-        "description": "Fully-qualified match ID. Format: {REGION_PREFIX}_{numeric_id}. The region prefix determines the routing region automatically — no separate region param needed. Required for: match_detail. E.g., \"KR_7482819248\", \"NA1_4912837465\", \"EUW1_6723541890\""
+        "description": "For match_detail, e.g. KR_7482819248"
       },
       "queue": {
         "required": false,
-        "description": "Ranked queue type filter. Values: `RANKED_SOLO_5x5` (solo/duo ranked), `RANKED_FLEX_SR` (flex 5v5 ranked). If omitted for player/ranked, returns data across all queues. If omitted for leaderboard, defaults to RANKED_SOLO_5x5. Used with: player, ranked, leaderboard. E.g., \"RANKED_SOLO_5x5\""
+        "description": "Leaderboard only: RANKED_SOLO_5x5 (default) | RANKED_FLEX_SR"
       },
       "region": {
         "required": false,
-        "description": "Server region for API routing. Values: `kr` (Korea), `na` (North America), `euw` (Europe West), `eune` (Europe Nordic & East), `jp` (Japan), `br` (Brazil), `la1` (Latin America North), `la2` (Latin America South), `oc` (Oceania), `tr` (Turkey), `ru` (Russia), `sg`/`sea` (Southeast Asia). Required for: player, ranked, mastery, live_game, leaderboard. Optional for champion_rotation (defaults to na if omitted). E.g., \"kr\""
+        "description": "kr | na | euw | eune | jp | br | la1 | la2 | oc | tr | ru | sg | sea. Required for player/ranked/mastery/live_game/leaderboard; optional for champion_rotation (default na1)"
       },
       "tier": {
         "required": false,
-        "description": "Ranked tier filter. When omitted, auto-fetches Challenger, Grandmaster, Master by LP. When provided, division may also be specified. Values: `CHALLENGER`, `GRANDMASTER`, `MASTER`, `DIAMOND`, `EMERALD`, `PLATINUM`, `GOLD`, `SILVER`, `BRONZE`, `IRON`. Note: CHALLENGER/GRANDMASTER/MASTER have no divisions — omit division for these tiers. Used with: leaderboard. E.g., \"DIAMOND\""
+        "description": "Leaderboard only: CHALLENGER | GRANDMASTER | MASTER | DIAMOND | EMERALD | PLATINUM | GOLD | SILVER | BRONZE | IRON. Apex tiers ignore division. Omitted returns top tiers"
       },
       "type": {
         "required": true,
-        "description": "Query category. Determines which API chain is invoked and which other params are required. Values: `player` (match history of last N games + ranked summary), `ranked` (ranked stats only: tier, LP, W/L per queue, no match details), `mastery` (champion mastery list), `live_game` (whether a player is currently in a game; returns game state if so), `match_detail` (full participant breakdown for a single match by ID), `leaderboard` (top-ranked players for a region and queue), `champion` (champion static data: name, title — uses query field for fuzzy search), `item` (item static data: name, cost — uses query field for fuzzy search), `champion_rotation` (current free champion rotation for a platform). E.g., \"player\""
+        "description": "Required. player (recent matches) | ranked (tier/LP) | mastery (champion points) | live_game | match_detail (one match) | leaderboard | champion | item | champion_rotation (free weekly, may be stale)"
       }
     },
-    "gaming.store": {},
+    "gaming.store": {
+      "language": {
+        "required": false,
+        "description": "Optional result language: en | zh | ja | ko. Defaults to en (zh for Chinese queries)."
+      },
+      "region": {
+        "required": false,
+        "description": "Optional 2-letter Steam country code for pricing, e.g. us, cn, jp. Defaults to us (cn for Chinese queries)."
+      }
+    },
     "general.general": {},
     "health.drug": {
       "type": {
@@ -660,23 +793,33 @@
         "description": "Provider-specific title or CFR title number."
       }
     },
-    "resource.image": {},
-    "security.intel": {
-      "ioc": {
-        "required": true,
-        "description": "Indicator of compromise: domain, IP, URL, or file hash"
+    "resource.image": {
+      "type": {
+        "required": false,
+        "description": "Enum values: asset, discover. Use asset to find ready-to-use material for article images, PPT slides, covers, posters, backgrounds, or design files (photos, illustrations, vector graphics); prefer stock libraries, then fall back to the open web if needed. Use discover to search, view, and compare images by text (object, scene, person, place, work, or event); for general browsing, start with stock libraries; for a specific object or event, prioritize the open web. Choose asset when the user explicitly needs ready-to-use assets; choose discover when the main goal is to find images related to a described person, event, or thing."
       }
     },
-    "security.noise": {
-      "ip": {
+    "resource.video": {},
+    "security.asset": {
+      "target": {
         "required": true,
-        "description": "Single IPv4 address to check, e.g. 8.8.8.8"
+        "description": "Single IPv4/IPv6 address, domain name, or URL (host is extracted). Examples: 1.2.3.4, 2001:db8::1, example.com, https://example.com/path."
       }
     },
-    "security.scan": {
+    "security.malware": {
       "ioc": {
         "required": true,
         "description": "Indicator of compromise to scan: domain, IP, URL, or file hash (MD5/SHA1/SHA256)"
+      }
+    },
+    "security.threat_intel": {
+      "target": {
+        "required": true,
+        "description": "Subject to investigate: IPv4/IPv6, domain, URL, file hash (MD5/SHA1/SHA256), threat actor name (e.g. APT29), ATT&CK technique/software ID (e.g. T1566/S0002), or campaign name"
+      },
+      "type": {
+        "required": false,
+        "description": "Optional subject type: ip / domain / url / hash / actor / technique / software / campaign. Auto-detected when omitted."
       }
     },
     "security.vuln": {
@@ -706,11 +849,11 @@
     "travel.flight": {
       "adults": {
         "required": false,
-        "description": "Number of adults"
+        "description": "Number of adults (non-negative integer)"
       },
       "arrival": {
         "required": true,
-        "description": "Arrival airport IATA 3-letter code"
+        "description": "Arrival airport: IATA 3-letter airport or city code or a city name recognized by the flight data provider (e.g., `Beijing`, `Xian`). City names expand to all matching airports; an airport code queries only that airport. `Xi An` (with a space) and `Xi'an` (with an apostrophe) do NOT resolve and return 0 airports (PARAM_INVALID); use `Xian` or the IATA code (XIY for Xi'an)."
       },
       "cabin_class": {
         "required": false,
@@ -718,11 +861,11 @@
       },
       "children": {
         "required": false,
-        "description": "Number of children"
+        "description": "Number of children (non-negative integer)"
       },
       "currency": {
         "required": false,
-        "description": "Currency code. Examples: USD, CNY"
+        "description": "3-letter ISO currency code, case-insensitive, normalized to uppercase. Examples: USD, CNY"
       },
       "date": {
         "required": true,
@@ -730,45 +873,33 @@
       },
       "departure": {
         "required": true,
-        "description": "Departure airport IATA 3-letter code (e.g., `PEK`, `LAX`)"
-      },
-      "destination": {
-        "required": false,
-        "description": "SFO / London (destination IATA code or city name)"
+        "description": "Departure airport: IATA 3-letter airport or city code (e.g., `PEK`, `BJS`) or a city name recognized by the flight data provider (e.g., `Beijing`, `Xian`). City names expand to all matching airports; an airport code queries only that airport. `Xi An` (with a space) and `Xi'an` (with an apostrophe) do NOT resolve and return 0 airports (PARAM_INVALID); use `Xian` or the IATA code (XIY for Xi'an)."
       },
       "infants": {
         "required": false,
-        "description": "Number of infants"
+        "description": "Number of infants (non-negative integer)"
       },
-      "origin": {
+      "max_stops": {
         "required": false,
-        "description": "HAN / PEK / Beijing (origin IATA code or city name)"
+        "description": "Maximum stops per leg; 0 = direct only, 1 = at most one stop. Omit for no filter"
       },
       "return_date": {
         "required": false,
-        "description": "25/06/2026 (return date, empty = one-way)"
-      },
-      "type": {
-        "required": false,
-        "description": "FlightSearch (flight ticket search)"
+        "description": "25/06/2026 (return date, empty = one-way; must not be earlier than date)"
       }
     },
     "travel.flight_status": {
       "date": {
         "required": false,
-        "description": "Flight date in YYYY-MM-DD format, defaults to today"
+        "description": "Flight date in YYYY-MM-DD format (UTC). YYYYMMDD and YYYY/MM/DD are also accepted. Defaults to today (UTC)."
       },
       "departure": {
         "required": true,
-        "description": "Optional departure airport IATA code for disambiguation"
+        "description": "Optional departure airport IATA 3-letter code, used only to disambiguate the same flight number. Only set it when the user explicitly specifies the departure airport; do not guess. An incorrect value may return no results for an otherwise valid flight. Omit when unsure."
       },
       "flight_number": {
         "required": true,
         "description": "IATA flight number, e.g. DL47, CA981"
-      },
-      "type": {
-        "required": false,
-        "description": "FlightStatus (optional; tag already selects status mode)"
       }
     }
   }

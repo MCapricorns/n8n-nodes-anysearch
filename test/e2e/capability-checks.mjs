@@ -4,88 +4,380 @@ import { searchOutputDigest } from './search-output-digest.cjs';
 import { catalogCoverage, catalogDefinitions } from './catalog-checks.mjs';
 import { assessSearchResults, checkSearchResults } from './result-checks.mjs';
 
+// The node rejects these before any HTTP request; each field must appear in the error text.
+const invalid = (query, tag, params, ...invalidFields) => ({ query, tag, params, invalidFields });
+// The node rejects these before any HTTP request with a message matching the pattern.
+const rejected = (query, tag, params, invalidMessage) => ({ query, tag, params, invalidMessage });
+
+const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const alphaFold = '10.1038/s41586-021-03819-2';
+const flight = { departure: 'PEK', arrival: 'SHA', date: '2027-01-10' };
+
 const cases = [
 	{
 		query: 'CA981',
 		tag: 'travel.flight_status',
-		params: { flight_number: 'CA981', departure: 'PEK', date: '2026-11-26', type: 'FlightStatus' },
+		params: { flight_number: 'CA981', departure: 'PEK', date: yesterday },
 		result: /CA981.*PEK\s*→\s*JFK/i,
 	},
 	{
 		query: 'AAPL',
 		tag: 'finance.fundamental',
-		params: { type: 'overview', symbol: 'AAPL', cn_code: '600519.SH' },
-		expectedParams: { type: 'overview', symbol: 'AAPL', cn_code: '' },
+		params: { market: 'US', type: 'overview', symbol: 'AAPL' },
 		result: /AAPL.*Fundamental/i,
 	},
 	{
-		query: 'Flight number missing',
+		query: 'MU5137',
 		tag: 'travel.flight_status',
-		params: { departure: '' },
-		invalidFields: ['flight_number'],
-	},
-	{
-		query: 'DL47',
-		tag: 'travel.flight_status',
-		params: { flight_number: 'DL47' },
-		expectedParams: { flight_number: 'DL47', departure: '' },
-		result: /DL47/i,
+		params: { flight_number: 'MU5137', departure: 'SHA', date: yesterday },
+		result: /MU5137/i,
 	},
 	{
 		query: '贵州茅台 利润表',
 		tag: 'finance.fundamental',
-		params: { type: 'income', cn_code: '600519.SH', symbol: 'AAPL' },
-		expectedParams: { type: 'income', cn_code: '600519.SH', symbol: '' },
-		result: /600519.*利润表/i,
+		params: { market: 'CN', type: 'income', symbol: '600519.SH' },
+		result: /600519.*(?:利润表|income[- ]statement)/i,
 	},
 	{
 		query: 'Hide on Bush',
 		tag: 'gaming.esports',
-		params: { type: 'player', game_name: 'Hide on Bush#KR1', region: 'kr' },
+		params: { type: 'mastery', game_name: 'Hide on Bush#KR1', region: 'kr' },
 	},
-	{
-		query: 'Python Reddit comments',
-		tag: 'social_media.social_media',
-		params: { type: 'reddit_comment', keyword: 'Python' },
-	},
-	{
-		query: 'Flight ticket parameters missing',
-		tag: 'travel.flight',
-		params: {},
-		invalidFields: ['departure', 'arrival', 'date'],
-	},
-	{
-		query: 'Apple Inc (AAPL) fundamentals',
-		tag: 'finance.fundamental',
-		params: { type: 'overview' },
-		expectedParams: { type: 'overview', symbol: '', cn_code: '' },
-		result: /AAPL.*Fundamental/i,
-	},
+	invalid('Flight ticket parameters missing', 'travel.flight', {}, 'departure', 'arrival', 'date'),
+	invalid(
+		'Apple Inc (AAPL) fundamentals',
+		'finance.fundamental',
+		{ type: 'overview' },
+		'market',
+		'symbol',
+	),
 	{
 		query: 'Upcoming company earnings',
 		tag: 'finance.calendar',
-		params: { type: 'earnings', symbol: 'AAPL' },
-		expectedParams: { type: 'earnings', symbol: 'AAPL', period: '90d' },
+		params: { market: 'US', type: 'earnings', symbol: 'AAPL', period: '90d' },
 		result: /earnings/i,
 	},
-	{
-		query: 'Esports player region missing',
-		tag: 'gaming.esports',
-		params: { type: 'player', game_name: 'Hide on Bush#KR1' },
-		invalidFields: ['region'],
-	},
-	{
-		query: 'Esports match IDs must include their region',
-		tag: 'gaming.esports',
-		params: { type: 'match_detail', match_id: '7482819248' },
-		invalidFields: ['match_id'],
-	},
-	{
-		query: 'Esports master leaderboard has no division',
-		tag: 'gaming.esports',
-		params: { type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
-		invalidFields: ['division'],
-	},
+	invalid(
+		'Esports player region missing',
+		'gaming.esports',
+		{ type: 'player', game_name: 'Hide on Bush#KR1' },
+		'region',
+	),
+	invalid(
+		'Esports match IDs must include their region',
+		'gaming.esports',
+		{ type: 'match_detail', match_id: '7482819248' },
+		'match_id',
+	),
+	invalid(
+		'Esports master leaderboard has no division',
+		'gaming.esports',
+		{ type: 'leaderboard', region: 'kr', tier: 'MASTER', division: 'I' },
+		'division',
+	),
+	invalid(
+		'Stock quote market missing',
+		'finance.quote',
+		{ type: 'stock', symbol: 'AAPL' },
+		'market',
+	),
+	invalid(
+		'Stock quote type unsupported',
+		'finance.quote',
+		{ market: 'US', type: 'option', symbol: 'AAPL' },
+		'type',
+	),
+	invalid(
+		'Forex quote market unsupported',
+		'finance.quote',
+		{ market: 'US', type: 'forex', symbol: 'EURUSD' },
+		'type',
+	),
+	invalid('Stock quote symbol missing', 'finance.quote', { market: 'US', type: 'stock' }, 'symbol'),
+	invalid(
+		'History frequency unsupported',
+		'finance.quote',
+		{ market: 'US', type: 'stock', symbol: 'AAPL', operation: 'history', frequency: '1h' },
+		'frequency',
+	),
+	invalid(
+		'Price adjustment unsupported',
+		'finance.quote',
+		{ market: 'CN', type: 'stock', symbol: '600519.SH', adjustment: 'yesterday' },
+		'adjustment',
+	),
+	invalid(
+		'Report period malformed',
+		'finance.fundamental',
+		{ market: 'US', type: 'overview', symbol: 'AAPL', report_period: 'quarter' },
+		'report_period',
+	),
+	invalid(
+		'Report end date needs a period',
+		'finance.fundamental',
+		{ market: 'US', type: 'income', symbol: 'AAPL', selection: 'report_end_date' },
+		'report_period',
+	),
+	invalid(
+		'Ratings market unsupported',
+		'finance.fundamental',
+		{ market: 'CN', type: 'ratings', symbol: '600519.SH' },
+		'type',
+	),
+	rejected(
+		'Fundamental A-share field removed',
+		'finance.fundamental',
+		{ market: 'CN', type: 'income', symbol: '600519.SH', cn_code: '600519.SH' },
+		/Unsupported parameters for finance\.fundamental/,
+	),
+	invalid(
+		'Corporate action type missing',
+		'finance.calendar',
+		{ market: 'CN', type: 'corporate_action' },
+		'event_type',
+	),
+	invalid(
+		'Trading calendar exchange missing',
+		'finance.calendar',
+		{ market: 'CN', type: 'trade_cal' },
+		'exchange',
+	),
+	invalid(
+		'US calendar window too long',
+		'finance.calendar',
+		{ market: 'US', type: 'earnings', period: '180d' },
+		'period',
+	),
+	invalid(
+		'Earnings date type unsupported',
+		'finance.calendar',
+		{ market: 'US', type: 'earnings', date_type: 'record' },
+		'date_type',
+	),
+	invalid(
+		'Macro period unsupported',
+		'finance.macro',
+		{ market: 'US', type: 'cpi', period: '5y' },
+		'period',
+	),
+	invalid(
+		'US macro measure unsupported',
+		'finance.macro',
+		{ market: 'US', type: 'cpi', measure: 'yoy' },
+		'measure',
+	),
+	invalid('SHIBOR market unsupported', 'finance.macro', { market: 'US', type: 'shibor' }, 'type'),
+	invalid(
+		'LPR tenor unsupported',
+		'finance.macro',
+		{ market: 'CN', type: 'lpr', tenor: '3m' },
+		'tenor',
+	),
+	invalid('Stock news symbol missing', 'finance.news', { market: 'US', type: 'stock' }, 'symbol'),
+	invalid(
+		'Transcript period missing',
+		'finance.news',
+		{ market: 'US', type: 'transcript', symbol: 'AAPL' },
+		'report_period',
+	),
+	invalid(
+		'News source unsupported',
+		'finance.news',
+		{ market: 'CN', type: 'long_form', news_src: 'eastmoney' },
+		'news_src',
+	),
+	invalid('News type removed', 'finance.news', { market: 'US', type: 'announcement' }, 'type'),
+	invalid(
+		'Market cap malformed',
+		'finance.screen',
+		{ market: 'US', type: 'stock', market_cap: 'abc' },
+		'market_cap',
+	),
+	invalid(
+		'PE range malformed',
+		'finance.screen',
+		{ market: 'US', type: 'stock', pe: '0..30..50' },
+		'pe',
+	),
+	invalid(
+		'Dividend yield out of range',
+		'finance.screen',
+		{ market: 'US', type: 'stock', dividend_yield: '0..150' },
+		'dividend_yield',
+	),
+	invalid(
+		'Index weight symbol missing',
+		'finance.screen',
+		{ market: 'CN', type: 'index_weight' },
+		'symbol',
+	),
+	rejected(
+		'Screen country removed',
+		'finance.screen',
+		{ market: 'US', type: 'stock', country: 'US' },
+		/Unsupported parameters for finance\.screen/,
+	),
+	invalid(
+		'Threat type mismatch',
+		'security.threat_intel',
+		{ target: '1.1.1.1', type: 'domain' },
+		'target',
+	),
+	invalid(
+		'Threat type unsupported',
+		'security.threat_intel',
+		{ target: 'APT29', type: 'botnet' },
+		'type',
+	),
+	rejected(
+		'Threat intel tag removed',
+		'security.intel',
+		{ ioc: 'example.com' },
+		/Unknown Capability Tag/,
+	),
+	rejected(
+		'FAO tag removed',
+		'agriculture.fao',
+		{ domain: 'production' },
+		/Unknown Capability Tag/,
+	),
+	rejected(
+		'Citation type removed',
+		'academic.citation',
+		{ id: alphaFold, id_type: 'doi' },
+		/Unsupported parameters for academic\.citation/,
+	),
+	invalid(
+		'Citation structured operation needs id',
+		'academic.citation',
+		{ op: 'citations', sort: 'creation:desc' },
+		'id',
+	),
+	invalid(
+		'Citation type unsupported',
+		'academic.citation',
+		{ id: '', type: 'JournalArticle' },
+		'type',
+	),
+	invalid('Citation year malformed', 'academic.citation', { id: '', year: '23' }, 'year'),
+	invalid(
+		'Citation filter unsupported',
+		'academic.citation',
+		{ id: alphaFold, op: 'citations', filter: 'year:2020' },
+		'filter',
+	),
+	invalid(
+		'Citation identifier not supported by op',
+		'academic.citation',
+		{ id: alphaFold, op: 'author' },
+		'id',
+	),
+	invalid(
+		'Citation operation unsupported',
+		'academic.citation',
+		{ id: alphaFold, op: 'related' },
+		'op',
+	),
+	invalid(
+		'Citation identifier checksum invalid',
+		'academic.citation',
+		{ id: '0000-0002-1825-0098', op: 'author' },
+		'id',
+	),
+	invalid('Dataset year malformed', 'academic.dataset', { year: '20' }, 'year'),
+	invalid(
+		'Dataset resource type unsupported',
+		'academic.dataset',
+		{ resource_type: 'SoftwarePackage' },
+		'resource_type',
+	),
+	invalid('Agriculture item missing', 'agriculture.stats', { domain: 'production' }, 'item'),
+	invalid(
+		'Agriculture domain unsupported',
+		'agriculture.stats',
+		{ item: 'Wheat', domain: 'crops' },
+		'domain',
+	),
+	invalid(
+		'Agriculture year malformed',
+		'agriculture.stats',
+		{ item: 'Wheat', year: '2024;' },
+		'year',
+	),
+	invalid('Snippet regex malformed', 'code.snippet', { regex: 'yes' }, 'regex'),
+	invalid('Air quality coordinates malformed', 'environment.aqi', { location: '38.9' }, 'location'),
+	invalid('Image type unsupported', 'resource.image', { type: 'gallery' }, 'type'),
+	invalid(
+		'Flight city with apostrophe',
+		'travel.flight',
+		{ ...flight, departure: "Xi'an" },
+		'departure',
+	),
+	invalid(
+		'Flight return before departure',
+		'travel.flight',
+		{ ...flight, return_date: '2027-01-05' },
+		'return_date',
+	),
+	invalid('Flight currency malformed', 'travel.flight', { ...flight, currency: 'US' }, 'currency'),
+	invalid('Flight stops unsupported', 'travel.flight', { ...flight, max_stops: 2 }, 'max_stops'),
+	rejected(
+		'Flight origin removed',
+		'travel.flight',
+		{ ...flight, origin: 'PEK' },
+		/Unsupported parameters for travel\.flight/,
+	),
+	invalid(
+		'Flight status date malformed',
+		'travel.flight_status',
+		{ flight_number: 'CA981', departure: 'PEK', date: '26/11/2026' },
+		'date',
+	),
+	invalid(
+		'Flight status number malformed',
+		'travel.flight_status',
+		{ flight_number: 'China 981', departure: 'PEK' },
+		'flight_number',
+	),
+	rejected(
+		'Flight status type removed',
+		'travel.flight_status',
+		{ flight_number: 'CA981', departure: 'PEK', type: 'FlightStatus' },
+		/Unsupported parameters for travel\.flight_status/,
+	),
+	invalid('Flight number missing', 'travel.flight_status', {}, 'flight_number'),
+	rejected(
+		'Reserved ISSN',
+		'academic.citation',
+		{ id: '0000-0000', op: 'venue-citation-count' },
+		/0000-0000|id must be/,
+	),
+	invalid(
+		'Esports Riot ID needs a tag line',
+		'gaming.esports',
+		{ type: 'player', game_name: 'Hide on Bush', region: 'kr' },
+		'game_name',
+	),
+	invalid(
+		'Esports division needs a tier',
+		'gaming.esports',
+		{ type: 'leaderboard', region: 'kr', division: 'II' },
+		'division',
+	),
+	invalid(
+		'Esports mastery count is not a positive integer',
+		'gaming.esports',
+		{ type: 'mastery', game_name: 'Hide on Bush#KR1', region: 'kr', count: 0 },
+		'count',
+	),
+	invalid('Store language unsupported', 'gaming.store', { language: 'fr' }, 'language'),
+	invalid('Store region malformed', 'gaming.store', { region: 'usa' }, 'region'),
+	rejected(
+		'Vulnerability identifiers differ',
+		'security.vuln',
+		{ type: 'cve', value: 'CVE-2021-44228' },
+		/same identifiers/,
+	),
 ];
 
 function safeId(id) {
@@ -101,19 +393,17 @@ function isQuotaResponse(item) {
 }
 
 function checkItem(entry, item) {
-	if (entry.invalidFields) {
+	if (entry.invalidFields || entry.invalidMessage) {
 		assert.equal(typeof item.error, 'string');
-		for (const field of entry.invalidFields) assert(item.error.includes(field), item.error);
+		for (const field of entry.invalidFields ?? []) assert(item.error.includes(field), item.error);
+		if (entry.invalidMessage) assert.match(item.error, entry.invalidMessage);
 		assert.equal(item.details.http_status, undefined);
 		assert.equal(item.details.request_id, undefined);
 		return;
 	}
 	assert(!item.error, item.error);
 	assert(item.request_id);
-	checkSearchResults(
-		{ ...entry, params: entry.expectedParams ?? entry.params, max_results: 1 },
-		item.results,
-	);
+	checkSearchResults({ ...entry, max_results: 1 }, item.results);
 	if (entry.result) assert.match(item.results[0].title, entry.result);
 }
 
@@ -188,7 +478,7 @@ export function checkCapabilityRequests(requests, tests) {
 				assert(item, 'Missing node output');
 				if (!single) assert.equal(item.query_index, index, 'Unexpected batch index');
 				const sameQuery = requests.filter((r) => r.body?.query === entry.query);
-				if (entry.invalidFields) {
+				if (entry.invalidFields || entry.invalidMessage) {
 					assert.equal(sameQuery.length, 0, 'Invalid parameters reached the HTTP API');
 					assert.equal(item.request_id, undefined, 'Local validation has an HTTP request ID');
 					assert.equal(item.http_status, undefined, 'Local validation has an HTTP status');
@@ -212,7 +502,7 @@ export function checkCapabilityRequests(requests, tests) {
 				const expected = {
 					query: entry.query,
 					tag: entry.tag,
-					params: entry.expectedParams ?? entry.params,
+					params: entry.params,
 					max_results: 1,
 				};
 				assert(
@@ -245,7 +535,7 @@ export function catalogRequestReport(records, requests, domains) {
 	const checks = [];
 	let semanticChecks = 0;
 	let nonemptyOnly = 0;
-	for (const [index, { input, output, expectedParams }] of records.entries()) {
+	for (const [index, { input, output }] of records.entries()) {
 		const id = safeId(output?.request_id ?? output?.details?.request_id);
 		try {
 			assert(
@@ -258,9 +548,8 @@ export function catalogRequestReport(records, requests, domains) {
 			assert(sent, 'Expected a captured HTTP request');
 			assert.equal(sent.method, 'POST', 'Unexpected search HTTP method');
 			assert.equal(sent.path, '/v1/search', 'Unexpected search HTTP path');
-			const expected = expectedParams === undefined ? input : { ...input, params: expectedParams };
 			assert(
-				isDeepStrictEqual(sent.body, expected),
+				isDeepStrictEqual(sent.body, input),
 				'Outgoing search body differs from the expected request',
 			);
 			bodies.push(sent.body);
@@ -297,7 +586,7 @@ export function catalogRequestReport(records, requests, domains) {
 				sent.searchOutputDigest,
 				'Wire and node search results or metadata differ',
 			);
-			const result = assessSearchResults(expected, output.results);
+			const result = assessSearchResults(input, output.results);
 			const evidence = {
 				index,
 				tag: input.tag ?? 'general',

@@ -1,62 +1,35 @@
 import type { IDataObject } from 'n8n-workflow';
 import type { CapabilityRuleMap, FieldRule } from './parameterRules';
-import { booleanValue, choice, commaSeparated, dateValue, format, integer } from './parameterRules';
+import {
+	booleanValue,
+	choice,
+	commaSeparated,
+	currency,
+	dateValue,
+	format,
+	integer,
+	language,
+	tightList,
+	yearRange,
+} from './parameterRules';
 
 // DOI Foundation handbook §4.3.1 includes Unicode spacing characters in DOI names.
 const doi = format(
 	/^10\.\d+(?:\.\d+)*\/[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]+$/u,
 	'a DOI such as 10.1038/s41586-021-03819-2',
 );
-const textList = commaSeparated(format(/\S/, 'non-empty text'));
-// https://id.loc.gov/vocabulary/iso639-1.json
-const languageCodes = new Set(
-	`aa ab ae af ak am an ar as av ay az ba be bg bi bm bn bo br bs ca ce ch co cr cs cu cv
-	cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho
-	hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku
-	kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn
-	no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm
-	sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi
-	vo wa wo xh yi yo za zh zu`.split(/\s+/),
-);
-// SIX ISO 4217 lists one (2026-09-17) and three (2026-01-01).
-// https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html
-const currencyCodes = new Set(
-	`ADP AED AFA AFN ALK ALL AMD ANG AOA AOK AON AOR ARA ARP ARS ARY ATS AUD AWG AYM AZM AZN
-	BAD BAM BBD BDT BEC BEF BEL BGJ BGK BGL BGN BHD BIF BMD BND BOB BOP BOV BRB BRC BRE BRL
-	BRN BRR BSD BTN BUK BWP BYB BYN BYR BZD CAD CDF CHC CHE CHF CHW CLF CLP CNY COP COU CRC
-	CSD CSJ CSK CUC CUP CVE CYP CZK DDM DEM DJF DKK DOP DZD ECS ECV EEK EGP ERN ESA ESB ESP
-	ETB EUR FIM FJD FKP FRF GBP GEK GEL GHC GHP GHS GIP GMD GNE GNF GNS GQE GRD GTQ GWE GWP
-	GYD HKD HNL HRD HRK HTG HUF IDR IEP ILP ILR ILS INR IQD IRR ISJ ISK ITL JMD JOD JPY KES
-	KGS KHR KMF KPW KRW KWD KYD KZT LAJ LAK LBP LKR LRD LSL LSM LTL LTT LUC LUF LUL LVL LVR
-	LYD MAD MDL MGA MGF MKD MLF MMK MNT MOP MRO MRU MTL MTP MUR MVQ MVR MWK MXN MXP MXV MYR
-	MZE MZM MZN NAD NGN NIC NIO NLG NOK NPR NZD OMR PAB PEH PEI PEN PES PGK PHP PKR PLN PLZ
-	PTE PYG QAR RHD ROK ROL RON RSD RUB RUR RWF SAR SBD SCR SDD SDG SDP SEK SGD SHP SIT SKK
-	SLE SLL SOS SRD SRG SSP STD STN SUR SVC SYP SZL THB TJR TJS TMM TMT TND TOP TPE TRL TRY
-	TTD TWD TZS UAH UAK UGS UGW UGX USD USN USS UYI UYN UYP UYU UYW UZS VEB VED VEF VES VNC
-	VND VUV WST XAD XAF XAG XAU XBA XBB XBC XBD XCD XCG XDR XEU XFO XFU XOF XPD XPF XPT XRE
-	XSU XTS XUA XXX YDD YER YUD YUM YUN ZAL ZAR ZMK ZMW ZRN ZRZ ZWC ZWD ZWG ZWL ZWN ZWR`.split(/\s+/),
-);
-const language: FieldRule = {
+// "Accept a bare DOI, a doi: prefix, or an http(s)://doi.org/ URL."
+const doiLookup: FieldRule = {
 	matches: (value) =>
 		typeof value === 'string' &&
-		/^[a-zA-Z]{2}$/.test(value) &&
-		languageCodes.has(value.toLowerCase()),
-	expected: 'a two-letter ISO 639-1 language code',
+		doi.matches(value.replace(/^(?:doi:|https?:\/\/doi\.org\/)/i, ''), {}),
+	expected:
+		'a DOI such as 10.1038/s41586-021-03819-2, with an optional doi: or http(s)://doi.org/ prefix',
 };
-const currency: FieldRule = {
-	matches: (value) => typeof value === 'string' && currencyCodes.has(value),
-	expected: 'a three-letter ISO 4217 currency code',
-};
+const textList = commaSeparated(format(/\S/, 'non-empty text'));
 const publicationDate = dateValue('YYYY', 'YYYY-MM', 'YYYY-MM-DD');
 const day = dateValue('YYYY-MM-DD');
 const citationCount = format(/^\d+$/, 'a non-negative integer string');
-const datasetYear: FieldRule = {
-	matches: (value) =>
-		typeof value === 'number'
-			? Number.isSafeInteger(value)
-			: typeof value === 'string' && /^-?\d+$/.test(value),
-	expected: 'a publication year as an integer or integer string',
-};
 const positiveInteger = integer(1);
 
 function validOrcid(value: unknown): boolean {
@@ -90,100 +63,104 @@ function validIsbn(id: string): boolean {
 	return sum % 10 === 0;
 }
 
+function validIssn(id: string): boolean {
+	// The catalog reserves 0000-0000.
+	const digits = id.replace('-', '');
+	return digits !== '00000000' && /^\d{4}-?\d{3}[\dX]$/i.test(id) && hasModulo11Checksum(digits);
+}
+
 const identifierTypes = new Map<string, (id: string) => boolean>([
 	['doi', (id) => doi.matches(id, {})],
 	['pmid', (id) => /^\d+$/.test(id)],
-	['issn', (id) => /^\d{4}-?\d{3}[\dX]$/i.test(id) && hasModulo11Checksum(id.replace('-', ''))],
+	['issn', validIssn],
 	['isbn', validIsbn],
 	['orcid', validOrcid],
 	// OpenCitations Meta assigns IDs to these five entity types.
 	['omid', (id) => /^(?:br|ra|ar|re|id)\/\d+(?:\/\d+)?$/i.test(id)],
+	['oci', (id) => /^\d+-\d+$/.test(id)],
 ]);
+
+// "Identifier support: metadata = DOI/PMID/ISSN/ISBN/OMID; citations, references, citation-count
+// and reference-count = DOI/PMID/OMID (reference-count also ISSN); author and editor = ORCID/OMID;
+// venue-citation-count = ISSN; citation = OCI."
+const identifierSupport: Record<string, string[]> = {
+	metadata: ['doi', 'pmid', 'issn', 'isbn', 'orcid', 'omid'],
+	citations: ['doi', 'pmid', 'omid'],
+	references: ['doi', 'pmid', 'omid'],
+	'citation-count': ['doi', 'pmid', 'omid'],
+	'reference-count': ['doi', 'pmid', 'omid', 'issn'],
+	author: ['orcid', 'omid'],
+	editor: ['orcid', 'omid'],
+	'venue-citation-count': ['issn'],
+	citation: ['oci'],
+};
+
+// A 10- or 13-digit identifier is an ISBN rather than a PMID; the catalog validates its check digit.
+function isbnShaped(id: string): boolean {
+	return /^(?:\d{13}|\d{9}[\dX])$/i.test(id.replace(/[ -]/g, ''));
+}
 
 function validCitationId(value: unknown, params: IDataObject): boolean {
 	if (typeof value !== 'string') return false;
-	const type = params.id_type;
-	if (params.op === 'citation') return /^\d+-\d+$/.test(value);
-	if (typeof type === 'string' && type !== '') {
-		return identifierTypes.get(type)?.(value) ?? false;
-	}
-	return [...identifierTypes.values()].some((match) => match(value));
+	// "Use type and year only for metadata keyword search with id empty."
+	if (value === '') return params.op === undefined || params.op === 'metadata';
+	const op = typeof params.op === 'string' ? params.op : 'metadata';
+	const supported = identifierSupport[op];
+	// An unsupported operation is reported by the op rule.
+	if (supported === undefined) return true;
+	if (isbnShaped(value)) return supported.includes('isbn') && validIsbn(value);
+	return supported.some((type) => identifierTypes.get(type)?.(value) === true);
 }
 
-// Document type IDs from https://api.crossref.org/types.
-const crossrefTypes = new Set(
-	`book book-chapter book-part book-section book-series book-set book-track component database
-	dataset dissertation edited-book grant journal journal-article journal-issue journal-volume
-	monograph other peer-review posted-content proceedings proceedings-article proceedings-series
-	reference-book reference-entry report report-component report-series standard`.split(/\s+/),
-);
-const citationPublicationTypes = commaSeparated(
-	choice(
-		'JournalArticle',
-		'Conference',
-		'Review',
-		'CaseReport',
-		'ClinicalTrial',
-		'Dataset',
-		'Editorial',
-		'LettersAndComments',
-		'MetaAnalysis',
-		'News',
-		'Study',
-		'Book',
-		'BookSection',
-	),
-);
+const citationFields = [
+	'oci',
+	'citing',
+	'cited',
+	'creation',
+	'timespan',
+	'journal_sc',
+	'author_sc',
+];
+// "Use comma-separated field:value expressions, for example creation:>2020,author_sc:no."
+const citationFilter: FieldRule = {
+	matches: (value) =>
+		typeof value === 'string' &&
+		value.split(',').every((entry) => {
+			const match = /^([a-z_]+):[^,\s]+$/.exec(entry);
+			return match !== null && citationFields.includes(match[1]);
+		}),
+	expected: `comma-separated field:value expressions using ${citationFields.join(', ')}`,
+};
+// "Single provider sort expression … Use field:order form, for example creation:desc."
+const citationSort: FieldRule = {
+	matches(value) {
+		const match = typeof value === 'string' ? /^([a-z_]+):(asc|desc)$/.exec(value) : null;
+		return match !== null && citationFields.includes(match[1]);
+	},
+	expected: `field:asc or field:desc using ${citationFields.join(', ')}`,
+};
 
-function checkRange(params: IDataObject, lower: string, upper: string): string | undefined {
-	const start = params[lower];
-	const end = params[upper];
-	if (typeof start !== 'string' || typeof end !== 'string') return undefined;
-	// An end specified as only a year or month includes that whole interval.
-	const precision = Math.min(start.length, end.length);
-	if (start.slice(0, precision) > end.slice(0, precision)) {
-		return `${lower} must be on or before ${upper}.`;
-	}
-	return undefined;
-}
+// DataCite resource types. Multi-word values are case-insensitive and also accept kebab-case.
+const dataciteTypes = `Audiovisual Book BookChapter Collection ComputationalNotebook ConferencePaper
+	ConferenceProceeding DataPaper Dataset Dissertation Event Image InteractiveResource Instrument
+	Journal JournalArticle Model OutputManagementPlan PeerReview PhysicalObject Preprint Report Service
+	Software Sound Standard StudyRegistration Text Workflow Other`
+	.split(/\s+/)
+	.map((type) => type.toLowerCase());
+const resourceType: FieldRule = {
+	matches: (value) =>
+		typeof value === 'string' && dataciteTypes.includes(value.toLowerCase().replace(/-/g, '')),
+	expected: 'a DataCite resource type such as Dataset or interactive-resource',
+};
 
 export const researchParameterRules: CapabilityRuleMap = {
 	'academic.citation': {
 		fields: {
-			category: commaSeparated(
-				choice(
-					'Computer Science',
-					'Medicine',
-					'Biology',
-					'Chemistry',
-					'Physics',
-					'Mathematics',
-					'Materials Science',
-					'Engineering',
-					'Environmental Science',
-					'Geology',
-					'Geography',
-					'Sociology',
-					'Psychology',
-					'Economics',
-					'Business',
-					'Political Science',
-					'Linguistics',
-					'Philosophy',
-					'History',
-					'Art',
-					'Education',
-					'Law',
-				),
-			),
-			doi,
-			filter: format(/^[^:\s]+:\s*\S/, 'a RAMOSE field:value expression'),
+			filter: citationFilter,
 			id: {
 				matches: validCitationId,
-				expected: 'a bare persistent identifier matching id_type, or an OCI for op=citation',
+				expected: 'an identifier supported by op, or empty for metadata keyword search',
 			},
-			id_type: choice('', 'doi', 'pmid', 'issn', 'isbn', 'orcid', 'omid'),
-			min_citations: citationCount,
 			op: choice(
 				'metadata',
 				'citations',
@@ -195,40 +172,48 @@ export const researchParameterRules: CapabilityRuleMap = {
 				'venue-citation-count',
 				'citation',
 			),
-			open_access: booleanValue,
-			// RAMOSE supports ascending and descending order: https://api.opencitations.net/index/v2
-			sort: format(/^[^:\s]+:(?:asc|desc)$/, 'a RAMOSE field:asc or field:desc expression'),
-			type: {
-				matches(value, params) {
-					return (
-						typeof value === 'string' &&
-						(crossrefTypes.has(value) ||
-							(!/\s/.test(value) && citationPublicationTypes.matches(value, params)))
-					);
-				},
-				expected:
-					'a Crossref type or a comma-separated list of documented publication types without spaces',
-			},
-			venue: textList,
-			year_from: publicationDate,
-			year_to: publicationDate,
+			sort: citationSort,
+			type: tightList(
+				choice(
+					'journal_article',
+					'conference_paper',
+					'book',
+					'book_chapter',
+					'preprint',
+					'dataset',
+					'report',
+					'thesis',
+					'monograph',
+					'edited_book',
+					'standard',
+					'component',
+					'journal_issue',
+				),
+			),
+			year: yearRange,
 		},
-		check: (params) => checkRange(params, 'year_from', 'year_to'),
-	},
-	'academic.dataset': {
-		fields: { year_from: datasetYear, year_to: datasetYear },
-		check: (params) => {
-			const { year_from: start, year_to: end } = params;
-			if (start !== undefined && end !== undefined && BigInt(String(start)) > BigInt(String(end))) {
-				return 'year_from must be on or before year_to.';
-			}
+		check: ({ id, op, type, year, filter, sort }) => {
+			// "Required for exact metadata lookup and all structured operations except metadata
+			// keyword search." A keyword search is a metadata query without an identifier.
+			const metadata = op === undefined || op === 'metadata';
+			const noId = id === undefined || id === '';
+			if (!metadata && noId) return `Provide id for op ${op}.`;
+			// "Publication type for metadata keyword search only with id empty."
+			if (!(metadata && noId) && (type !== undefined || year !== undefined))
+				return 'Use type and year only for metadata keyword search with id empty.';
+			// "Provider filter expression for citations and references only."
+			if ((filter !== undefined || sort !== undefined) && op !== 'citations' && op !== 'references')
+				return 'Use filter and sort only with op citations or references.';
 			return undefined;
 		},
+	},
+	'academic.dataset': {
+		fields: { resource_type: resourceType, year: yearRange },
 	},
 	'academic.paper': {
 		fields: {
 			authors: textList,
-			doi,
+			doi: doiLookup,
 			language,
 			min_citations: citationCount,
 			open_access: booleanValue,
@@ -247,13 +232,7 @@ export const researchParameterRules: CapabilityRuleMap = {
 			),
 			sort: choice('relevance', 'date_asc', 'date_desc', 'cited'),
 			venue: textList,
-			year: format(/^(?:\d{4}(?:-(?:\d{4})?)?|-\d{4})$/, 'YYYY, YYYY-YYYY, YYYY-, or -YYYY'),
-		},
-		check: (params) => {
-			if (typeof params.year !== 'string') return undefined;
-			const [start, end] = params.year.split('-');
-			if (start && end && start > end) return 'The first year must be on or before the last year.';
-			return undefined;
+			year: yearRange,
 		},
 	},
 	'academic.person': {
@@ -308,20 +287,13 @@ export const researchParameterRules: CapabilityRuleMap = {
 			),
 			resource_kind: choice('rules', 'resources', 'all'),
 			title: {
-				matches(value, params) {
-					const text = typeof value === 'string';
-					const numeric = typeof value === 'number' || (text && /^[+-]?\d+$/.test(value.trim()));
-					if (params.collection === 'CFR' && numeric) {
-						const number = Number(value);
-						return Number.isInteger(number) && number >= 1 && number <= 50;
-					}
-					return text
+				matches(value) {
+					return typeof value === 'string'
 						? value.trim() !== ''
-						: typeof value === 'number' && positiveInteger.matches(value, params);
+						: typeof value === 'number' && positiveInteger.matches(value, {});
 				},
-				expected: 'non-empty text or an integer title number (1 to 50 for CFR)',
+				expected: 'non-empty text or an integer title number',
 			},
 		},
-		check: (params) => checkRange(params, 'effective_from', 'effective_to'),
 	},
 };

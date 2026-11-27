@@ -608,6 +608,7 @@ async function extractOperation(
 	} catch {
 		throw new NodeOperationError(node, 'URL must be an absolute public HTTP(S) URL');
 	}
+	// The API reads public pages only and has no login or account/password capability.
 	if (url.username || url.password) {
 		throw new NodeOperationError(node, 'URL must not contain embedded credentials');
 	}
@@ -917,7 +918,7 @@ export class AnySearch implements INodeType {
 						default: '{}',
 						placeholder: '{"lang": "go"}',
 						description:
-							'JSON object with parameters for the capability tag (e.g. {"type": "stock", "symbol": "AAPL"} for finance.quote)',
+							'JSON object with the parameters defined by the capability tag in the AnySearch catalog (e.g. {"market": "US", "type": "stock", "symbol": "AAPL"} for finance.quote)',
 					},
 					{
 						displayName: 'Zone',

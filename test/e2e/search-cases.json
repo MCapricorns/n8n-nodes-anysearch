@@ -1,1024 +1,2006 @@
 [
-  {
-    "query": "AlphaFold protein structure prediction",
-    "tag": "academic.citation",
-    "params": {
-      "id": "10.1038/s41586-021-03819-2",
-      "id_type": "doi",
-      "op": "metadata",
-      "doi": "10.1038/s41586-021-03819-2",
-      "type": "journal-article",
-      "filter": "creation:2021-*-*",
-      "sort": "creation:desc",
-      "open_access": "true",
-      "min_citations": "1",
-      "venue": "Nature",
-      "category": "Biology",
-      "year_from": "2021",
-      "year_to": "2022"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "climate data",
-    "tag": "academic.dataset",
-    "params": {
-      "client_id": "cern.zenodo",
-      "resource_type": "Dataset",
-      "year_from": "2020",
-      "year_to": "2025"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Attention Is All You Need",
-    "tag": "academic.paper",
-    "params": {
-      "authors": "Ashish Vaswani",
-      "year": "2017-2018",
-      "venue": "Advances in Neural Information Processing Systems"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Geoffrey Hinton",
-    "tag": "academic.person",
-    "params": {
-      "name": "Geoffrey Hinton",
-      "affiliations": "University of Toronto",
-      "schools": "University of Edinburgh",
-      "research_areas": "machine learning"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "World wheat production",
-    "tag": "agriculture.fao",
-    "params": {
-      "domain": "production",
-      "keyword": "wheat production",
-      "location": "World",
-      "date_start": "2023",
-      "type": "GlobalAgriculture"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple Inc",
-    "tag": "business.company",
-    "params": {
-      "type": "GlobalLEI",
-      "keyword": "Apple Inc."
-    },
-    "max_results": 1
-  },
-  {
-    "query": "software engineer",
-    "tag": "business.jobs",
-    "params": {
-      "type": "RemoteJobs",
-      "keyword": "software engineer"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Microsoft engineering",
-    "tag": "business.people",
-    "params": {
-      "type": "PeopleSearch",
-      "keyword": "Microsoft",
-      "title": "CTO",
-      "location": "California",
-      "seniority": "executive"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "China tea exports",
-    "tag": "business.trade",
-    "params": {
-      "type": "GlobalBilateralTrade",
-      "hs_code": "0902",
-      "location": "China",
-      "flow": "export",
-      "date_start": "2023"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "React useEffect cleanup",
-    "tag": "code.doc",
-    "params": {
-      "library": "react"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "useEffect",
-    "tag": "code.snippet",
-    "params": {
-      "lang": "TypeScript",
-      "repo": "facebook/react",
-      "path": "packages/react"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "France electricity generation",
-    "tag": "energy.electricity",
-    "params": {
-      "type": "GlobalElectricity",
-      "location": "France",
-      "metric": "generation"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "United States crude oil production",
-    "tag": "energy.production",
-    "params": {
-      "type": "USEnergyData",
-      "keyword": "crude oil production",
-      "location": "United States",
-      "frequency": "annual",
-      "date_start": "2023"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Beijing air quality",
-    "tag": "environment.aqi",
-    "params": {
-      "type": "GlobalAirQuality",
-      "location": "Beijing"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Big Buck Bunny",
-    "tag": "film.torrent",
-    "max_results": 1
-  },
-  {
-    "query": "upcoming company earnings",
-    "tag": "finance.calendar",
-    "params": {
-      "type": "earnings",
-      "period": "90d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple fundamentals",
-    "tag": "finance.fundamental",
-    "params": {
-      "type": "overview",
-      "symbol": "AAPL",
-      "cn_code": "",
-      "period": "annual"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "United States federal funds rate",
-    "tag": "finance.macro",
-    "params": {
-      "type": "fed_funds",
-      "period": "30d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial news",
-    "tag": "finance.news",
-    "params": {
-      "type": "general"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple stock price",
-    "tag": "finance.quote",
-    "params": {
-      "type": "stock",
-      "symbol": "AAPL",
-      "period": "7d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "technology stocks",
-    "tag": "finance.screen",
-    "params": {
-      "type": "stock",
-      "country": "US",
-      "sector": "Technology"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Yasuo",
-    "tag": "gaming.esports",
-    "params": {
-      "type": "champion"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Portal 2",
-    "tag": "gaming.store",
-    "max_results": 1
-  },
-  {
-    "query": "What is the capital of France?",
-    "tag": "general.general",
-    "max_results": 1
-  },
-  {
-    "query": "aspirin",
-    "tag": "health.drug",
-    "params": {
-      "type": "name"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "life expectancy Japan",
-    "tag": "health.stats",
-    "max_results": 1
-  },
-  {
-    "query": "type 2 diabetes",
-    "tag": "health.trial",
-    "max_results": 1
-  },
-  {
-    "query": "solar cell",
-    "tag": "ip.global",
-    "params": {
-      "type": "GlobalPatent",
-      "keyword": "solar cell",
-      "ipc": "H01L",
-      "applicant": "Panasonic",
-      "date_start": "2020"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "SEC securities enforcement",
-    "tag": "legal.enforcement",
-    "params": {
-      "jurisdiction": "US",
-      "regulatory_domain": "securities"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Brown v Board of Education",
-    "tag": "legal.judicial",
-    "params": {
-      "jurisdiction": "US",
-      "case_type": "civil"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Clean Air Act",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "US"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "mountain landscape",
-    "tag": "resource.image",
-    "max_results": 1
-  },
-  {
-    "query": "example.com reputation",
-    "tag": "security.intel",
-    "params": {
-      "ioc": "example.com"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "8.8.8.8 internet noise",
-    "tag": "security.noise",
-    "params": {
-      "ip": "8.8.8.8"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "empty file hash reputation",
-    "tag": "security.scan",
-    "params": {
-      "ioc": "d41d8cd98f00b204e9800998ecf8427e"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "CVE-2021-44228",
-    "tag": "security.vuln",
-    "params": {
-      "type": "cve",
-      "value": "CVE-2021-44228"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python programming",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "reddit_post",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Flights from LAX to SFO",
-    "tag": "travel.flight",
-    "params": {
-      "departure": "LAX",
-      "arrival": "SFO",
-      "date": "2026-12-10",
-      "adults": "1",
-      "currency": "USD",
-      "type": "FlightSearch",
-      "cabin_class": "Economy",
-      "children": "1",
-      "infants": "0",
-      "origin": "LAX",
-      "destination": "SFO",
-      "return_date": "2026-12-17"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "CA981 flight status",
-    "tag": "travel.flight_status",
-    "params": {
-      "flight_number": "CA981",
-      "departure": "PEK",
-      "date": "2026-11-26",
-      "type": "FlightStatus"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "weibo",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "weibo_hot",
-      "keyword": "Python",
-      "region": "Beijing"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "zhihu",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "zhihu_hot",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "x_top",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "x_latest",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "x_media",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "x_people",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "x_lists",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "reddit_community",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "reddit_comment",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "reddit_media",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "reddit_people",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "linkedin_people",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "linkedin_jobs",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "linkedin_company",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "linkedin_posts",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Python",
-    "tag": "social_media.social_media",
-    "params": {
-      "type": "wechatmp",
-      "keyword": "Python"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "sina"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "wallstreetcn"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "10jqka"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "eastmoney"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "cls"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "yicai"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "yuncaijing"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "fenghuang"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "financial market news",
-    "tag": "finance.news",
-    "params": {
-      "type": "flash",
-      "news_src": "jinrongjie"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "climate",
-    "tag": "academic.dataset",
-    "params": {
-      "client_id": "figshare.ars",
-      "resource_type": "Dataset"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "climate",
-    "tag": "academic.dataset",
-    "params": {
-      "client_id": "bl.dryad",
-      "resource_type": "Dataset"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "transformer neural network",
-    "tag": "academic.paper",
-    "params": {
-      "publication_type": "preprint",
-      "sort": "date_desc"
-    },
-    "max_results": 3
-  },
-  {
-    "query": "transformer neural network",
-    "tag": "academic.paper",
-    "params": {
-      "language": "en",
-      "min_citations": "5",
-      "open_access": "true",
-      "publication_type": "journal_article",
-      "sort": "cited"
-    },
-    "max_results": 3
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "year": "2017",
-      "sort": "date_asc"
-    },
-    "max_results": 3
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "publication_type": "journal_article",
-      "venue": "Nature"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "publication_type": "preprint"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "publication_type": "review",
-      "year": "2022-"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "diabetes",
-    "tag": "academic.paper",
-    "params": {
-      "publication_type": "book_chapter",
-      "year": "-2020"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Alibaba",
-    "tag": "business.company",
-    "params": {
-      "type": "ChineseEnterprise",
-      "keyword": "Alibaba"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple",
-    "tag": "business.company",
-    "params": {
-      "type": "USFilings",
-      "keyword": "Apple"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "software engineer",
-    "tag": "business.jobs",
-    "params": {
-      "type": "GeneralJobs",
-      "keyword": "software engineer",
-      "location": "San Francisco",
-      "salary_min": "80000"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "software engineer",
-    "tag": "business.jobs",
-    "params": {
-      "type": "USFederalJobs",
-      "keyword": "software engineer"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "example.com company email lookup",
-    "tag": "business.people",
-    "params": {
-      "type": "EmailLookup",
-      "keyword": "example.com"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "United States imports computers",
-    "tag": "business.trade",
-    "params": {
-      "type": "USImportExport",
-      "location": "United States",
-      "flow": "import",
-      "hs_code": "8471",
-      "date_start": "2023"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "France electricity generation",
-    "tag": "energy.electricity",
-    "params": {
-      "type": "EUElectricity",
-      "location": "France",
-      "metric": "generation",
-      "date_start": "2026-05-23",
-      "date_end": "2026-05-24"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "New South Wales electricity generation",
-    "tag": "energy.electricity",
-    "params": {
-      "type": "AustralianElectricity",
-      "location": "New South Wales",
-      "metric": "generation"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "California electricity generation",
-    "tag": "energy.electricity",
-    "params": {
-      "type": "USEnergyData",
-      "location": "California",
-      "metric": "generation"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "n8n workflow automation",
-    "zone": "cn",
-    "language": "zh-CN",
-    "format": "json",
-    "max_results": 1
-  },
-  {
-    "query": "n8n workflow automation",
-    "zone": "intl",
-    "language": "en",
-    "format": "markdown",
-    "max_results": 1
-  },
-  {
-    "query": "Attention Is All You Need",
-    "tag": "academic.paper",
-    "params": {
-      "doi": "10.48550/arXiv.1706.03762"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Josiah Carberry",
-    "tag": "academic.person",
-    "params": {
-      "orcid": "0000-0002-1825-0097"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple earnings calendar",
-    "tag": "finance.calendar",
-    "params": {
-      "type": "earnings",
-      "symbol": "AAPL",
-      "period": "90d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "贵州茅台业绩日历",
-    "tag": "finance.calendar",
-    "params": {
-      "type": "earnings",
-      "cn_code": "600519.SH",
-      "period": "90d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "贵州茅台股价",
-    "tag": "finance.quote",
-    "params": {
-      "type": "stock",
-      "cn_code": "600519.SH"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "贵州茅台公司公告",
-    "tag": "finance.news",
-    "params": {
-      "type": "announcement",
-      "cn_code": "600519.SH",
-      "period": "7d"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Apple company news",
-    "tag": "finance.news",
-    "params": {
-      "type": "stock",
-      "symbol": "AAPL"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Hide on Bush champion mastery",
-    "tag": "gaming.esports",
-    "params": {
-      "type": "mastery",
-      "game_name": "Hide on Bush#KR1",
-      "region": "kr",
-      "champion": "Yasuo"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "League of Legends match",
-    "tag": "gaming.esports",
-    "params": {
-      "type": "match_detail",
-      "match_id": "KR_7482819248"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Korean Gold I leaderboard",
-    "tag": "gaming.esports",
-    "params": {
-      "type": "leaderboard",
-      "region": "kr",
-      "tier": "GOLD",
-      "division": "I",
-      "queue": "RANKED_SOLO_5x5"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "FTC Facebook privacy settlement",
-    "tag": "legal.enforcement",
-    "params": {
-      "jurisdiction": "US",
-      "authority": "Federal Trade Commission",
-      "currency": "USD",
-      "decision_date": "2019-07-24",
-      "decision_number": "182 3109",
-      "decision_type": "penalty",
-      "legal_basis": "Federal Trade Commission Act",
-      "penalty_amount": "5000000000",
-      "penalty_types": "fine",
-      "regulatory_domain": "data_protection",
-      "subject_names": "Facebook"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "R v Jordan",
-    "tag": "legal.judicial",
-    "params": {
-      "jurisdiction": "CA",
-      "case_id": "2016scc27",
-      "database_id": "csc-scc",
-      "case_number": "2016 SCC 27",
-      "court": "Supreme Court of Canada",
-      "judgment_date": "2016-07-08",
-      "language": "en",
-      "document_type": "judgment"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "劳动合同纠纷",
-    "tag": "legal.judicial",
-    "params": {
-      "jurisdiction": "CN",
-      "cause_of_action": "劳动合同纠纷",
-      "procedure": "first_instance",
-      "service": "case"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "right to a fair hearing France",
-    "tag": "legal.judicial",
-    "params": {
-      "jurisdiction": "ECHR",
-      "respondent": "FRA",
-      "doc_type": "JUDGMENT",
-      "legal_basis": "Article 6"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Clean Air Act regulations",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "US",
-      "collection": "CFR",
-      "title": "40",
-      "agency": "environmental-protection-agency",
-      "date_from": "2020-01-01",
-      "date_to": "2026-01-01"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Clean Air Act bills",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "US",
-      "collection": "BILLS",
-      "congress": "119",
-      "legal_level": "bill",
-      "language": "en"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "中华人民共和国民法典",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "CN",
-      "article_number": "第二十条",
-      "document_number": "主席令第四十五号",
-      "effective_from": "2021-01-01",
-      "effective_to": "2026-12-31",
-      "effective_status": "effective",
-      "historical": "true",
-      "issuing_authority": "全国人民代表大会",
-      "legal_level": "statute",
-      "doc_type": "law",
-      "service": "law"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Canadian federal environmental regulations",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "CA",
-      "database_id": "car",
-      "resource_kind": "rules"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "Environmental Protection Agency Clean Air Act Federal Register final rule",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "US",
-      "collection": "FR"
-    },
-    "max_results": 1
-  },
-  {
-    "query": "42 USC 7401 Clean Air Act",
-    "tag": "legal.legislation",
-    "params": {
-      "jurisdiction": "US",
-      "collection": "USCODE"
-    },
-    "max_results": 1
-  }
+	{
+		"query": "AlphaFold protein structure prediction",
+		"tag": "academic.citation",
+		"params": {
+			"id": "10.1038/s41586-021-03819-2",
+			"op": "metadata"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold preprints",
+		"tag": "academic.citation",
+		"params": {
+			"op": "metadata",
+			"type": "preprint",
+			"year": "2021"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "climate data",
+		"tag": "academic.dataset",
+		"params": {
+			"client_id": "cern.zenodo",
+			"resource_type": "Dataset",
+			"year": "2020-2025"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Attention Is All You Need",
+		"tag": "academic.paper",
+		"params": {
+			"authors": "Ashish Vaswani",
+			"year": "2017-2018",
+			"venue": "Advances in Neural Information Processing Systems"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Geoffrey Hinton",
+		"tag": "academic.person",
+		"params": {
+			"name": "Geoffrey Hinton",
+			"affiliations": "University of Toronto",
+			"schools": "University of Edinburgh",
+			"research_areas": "machine learning"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "World wheat production",
+		"tag": "agriculture.stats",
+		"params": {
+			"item": "Wheat",
+			"domain": "production",
+			"area": "World",
+			"element": "Production",
+			"year": "2024"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Brazil soybean exports to China",
+		"tag": "agriculture.stats",
+		"params": {
+			"item": "Soya beans",
+			"domain": "trade",
+			"area": "Brazil",
+			"partner": "China, mainland",
+			"element": "Export quantity",
+			"year": "2022"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple Inc",
+		"tag": "business.company",
+		"params": {
+			"type": "GlobalLEI",
+			"keyword": "Apple Inc."
+		},
+		"max_results": 1
+	},
+	{
+		"query": "software engineer",
+		"tag": "business.jobs",
+		"params": {
+			"type": "RemoteJobs",
+			"keyword": "software engineer"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Microsoft engineering",
+		"tag": "business.people",
+		"params": {
+			"type": "PeopleSearch",
+			"keyword": "Microsoft",
+			"title": "CTO",
+			"location": "California",
+			"seniority": "executive"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "China tea exports",
+		"tag": "business.trade",
+		"params": {
+			"type": "GlobalBilateralTrade",
+			"hs_code": "0902",
+			"location": "China",
+			"flow": "export",
+			"date_start": "2023"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "React useEffect cleanup",
+		"tag": "code.doc",
+		"params": {
+			"library": "react"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "useEffect",
+		"tag": "code.snippet",
+		"params": {
+			"lang": "TypeScript",
+			"repo": "facebook/react",
+			"path": "packages/react"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "France electricity generation",
+		"tag": "energy.electricity",
+		"params": {
+			"type": "GlobalElectricity",
+			"location": "France",
+			"metric": "generation"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "United States crude oil production",
+		"tag": "energy.production",
+		"params": {
+			"type": "USEnergyData",
+			"keyword": "crude oil production",
+			"location": "United States",
+			"frequency": "annual",
+			"date_start": "2023"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Beijing air quality",
+		"tag": "environment.aqi",
+		"params": {
+			"location": "Beijing"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Big Buck Bunny",
+		"tag": "film.torrent",
+		"max_results": 1
+	},
+	{
+		"query": "upcoming company earnings",
+		"tag": "finance.calendar",
+		"params": {
+			"type": "earnings",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple fundamentals",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "overview",
+			"symbol": "AAPL"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "United States federal funds rate",
+		"tag": "finance.macro",
+		"params": {
+			"market": "US",
+			"type": "fed_funds",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "financial news",
+		"tag": "finance.news",
+		"params": {
+			"type": "general"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple stock price",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"symbol": "AAPL",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "technology stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"sector": "Technology"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Yasuo",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "champion"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Portal 2",
+		"tag": "gaming.store",
+		"max_results": 1
+	},
+	{
+		"query": "What is the capital of France?",
+		"tag": "general.general",
+		"max_results": 1
+	},
+	{
+		"query": "aspirin",
+		"tag": "health.drug",
+		"params": {
+			"type": "name"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "life expectancy Japan",
+		"tag": "health.stats",
+		"max_results": 1
+	},
+	{
+		"query": "type 2 diabetes",
+		"tag": "health.trial",
+		"max_results": 1
+	},
+	{
+		"query": "solar cell",
+		"tag": "ip.global",
+		"params": {
+			"type": "GlobalPatent",
+			"keyword": "solar cell",
+			"ipc": "H01L",
+			"applicant": "Panasonic",
+			"date_start": "2020"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "SEC securities enforcement",
+		"tag": "legal.enforcement",
+		"params": {
+			"jurisdiction": "US",
+			"regulatory_domain": "securities"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Brown v Board of Education",
+		"tag": "legal.judicial",
+		"params": {
+			"jurisdiction": "US",
+			"case_type": "civil"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Clean Air Act",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "US"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Eiffel Tower",
+		"tag": "resource.image",
+		"max_results": 1,
+		"params": {
+			"type": "discover"
+		}
+	},
+	{
+		"query": "ocean waves video",
+		"tag": "resource.video",
+		"max_results": 1
+	},
+	{
+		"query": "example.com",
+		"tag": "security.asset",
+		"params": {
+			"target": "example.com"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "8.8.8.8",
+		"tag": "security.malware",
+		"params": {
+			"ioc": "8.8.8.8"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "empty file hash reputation",
+		"tag": "security.threat_intel",
+		"params": {
+			"target": "d41d8cd98f00b204e9800998ecf8427e"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "CVE-2021-44228",
+		"tag": "security.vuln",
+		"params": {
+			"type": "cve",
+			"value": "CVE-2021-44228"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python programming",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "reddit_post",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Flights from LAX to SFO",
+		"tag": "travel.flight",
+		"params": {
+			"departure": "LAX",
+			"arrival": "SFO",
+			"date": "2026-12-27",
+			"adults": "1",
+			"currency": "USD",
+			"cabin_class": "Economy",
+			"children": "1",
+			"infants": "0",
+			"max_stops": 0,
+			"return_date": "2026-12-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "CA981 flight status",
+		"tag": "travel.flight_status",
+		"params": {
+			"flight_number": "CA981",
+			"departure": "PEK",
+			"date": "2026-12-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "weibo",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "weibo_hot",
+			"keyword": "Python",
+			"region": "Beijing"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "zhihu",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "zhihu_hot",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "x_top",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "x_latest",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "x_media",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "x_people",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "x_lists",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "reddit_community",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "reddit_comment",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "reddit_media",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "reddit_people",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "linkedin_people",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "linkedin_jobs",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "linkedin_company",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "linkedin_posts",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Python",
+		"tag": "social_media.social_media",
+		"params": {
+			"type": "wechatmp",
+			"keyword": "Python"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "A股 收评",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "sina",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "华尔街见闻",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "wallstreetcn",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "同花顺财经",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "10jqka",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "新华网财经",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "xinhua",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "财联社电报",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "cls",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "第一财经",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "yicai",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "财新网",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "caixin",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "凤凰网财经",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "fenghuang",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国证券报",
+		"tag": "finance.news",
+		"params": {
+			"market": "CN",
+			"type": "long_form",
+			"news_src": "cs",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "climate",
+		"tag": "academic.dataset",
+		"params": {
+			"client_id": "figshare.ars",
+			"resource_type": "Dataset"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "climate",
+		"tag": "academic.dataset",
+		"params": {
+			"client_id": "dryad.dryad",
+			"resource_type": "Dataset"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "transformer neural network",
+		"tag": "academic.paper",
+		"params": {
+			"publication_type": "preprint",
+			"sort": "date_desc"
+		},
+		"max_results": 3
+	},
+	{
+		"query": "transformer neural network",
+		"tag": "academic.paper",
+		"params": {
+			"language": "en",
+			"min_citations": "5",
+			"open_access": "true",
+			"publication_type": "journal_article",
+			"sort": "cited"
+		},
+		"max_results": 3
+	},
+	{
+		"query": "diabetes",
+		"tag": "academic.paper",
+		"params": {
+			"year": "2017",
+			"sort": "date_asc"
+		},
+		"max_results": 3
+	},
+	{
+		"query": "diabetes",
+		"tag": "academic.paper",
+		"params": {
+			"publication_type": "journal_article",
+			"venue": "Nature"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "diabetes",
+		"tag": "academic.paper",
+		"params": {
+			"publication_type": "preprint"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "diabetes",
+		"tag": "academic.paper",
+		"params": {
+			"publication_type": "review",
+			"year": "2022-"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "diabetes",
+		"tag": "academic.paper",
+		"params": {
+			"publication_type": "book_chapter",
+			"year": "-2020"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Alibaba",
+		"tag": "business.company",
+		"params": {
+			"type": "ChineseEnterprise",
+			"keyword": "Alibaba"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple",
+		"tag": "business.company",
+		"params": {
+			"type": "USFilings",
+			"keyword": "Apple"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "software engineer",
+		"tag": "business.jobs",
+		"params": {
+			"type": "GeneralJobs",
+			"keyword": "software engineer",
+			"location": "San Francisco",
+			"salary_min": "80000"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "software engineer",
+		"tag": "business.jobs",
+		"params": {
+			"type": "USFederalJobs",
+			"keyword": "software engineer"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "example.com company email lookup",
+		"tag": "business.people",
+		"params": {
+			"type": "EmailLookup",
+			"keyword": "example.com"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "United States imports computers",
+		"tag": "business.trade",
+		"params": {
+			"type": "USImportExport",
+			"location": "United States",
+			"flow": "import",
+			"hs_code": "8471",
+			"date_start": "2023"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "France electricity generation",
+		"tag": "energy.electricity",
+		"params": {
+			"type": "EUElectricity",
+			"location": "France",
+			"metric": "generation",
+			"date_start": "2026-05-23",
+			"date_end": "2026-05-24"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "New South Wales electricity generation",
+		"tag": "energy.electricity",
+		"params": {
+			"type": "AustralianElectricity",
+			"location": "New South Wales",
+			"metric": "generation"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "California electricity generation",
+		"tag": "energy.electricity",
+		"params": {
+			"type": "USEnergyData",
+			"location": "California",
+			"metric": "generation"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "n8n workflow automation",
+		"zone": "cn",
+		"language": "zh-CN",
+		"format": "json",
+		"max_results": 1
+	},
+	{
+		"query": "n8n workflow automation",
+		"zone": "intl",
+		"language": "en",
+		"format": "markdown",
+		"max_results": 1
+	},
+	{
+		"query": "Attention Is All You Need",
+		"tag": "academic.paper",
+		"params": {
+			"doi": "10.48550/arXiv.1706.03762"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Josiah Carberry",
+		"tag": "academic.person",
+		"params": {
+			"orcid": "0000-0002-1825-0097"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple earnings calendar",
+		"tag": "finance.calendar",
+		"params": {
+			"type": "earnings",
+			"symbol": "AAPL",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台业绩日历",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "CN",
+			"type": "earnings",
+			"symbol": "600519.SH",
+			"report_period": "2026Q3",
+			"date_type": "actual"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台股价",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"symbol": "600519.SH"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple company news",
+		"tag": "finance.news",
+		"params": {
+			"type": "stock",
+			"symbol": "AAPL"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "League of Legends match",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "match_detail",
+			"match_id": "KR_8421752997"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Korean Gold I leaderboard",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "leaderboard",
+			"region": "kr",
+			"tier": "GOLD",
+			"division": "I",
+			"queue": "RANKED_SOLO_5x5"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "FTC Facebook privacy settlement",
+		"tag": "legal.enforcement",
+		"params": {
+			"jurisdiction": "US",
+			"authority": "Federal Trade Commission",
+			"currency": "USD",
+			"decision_date": "2019-07-24",
+			"decision_number": "182 3109",
+			"decision_type": "penalty",
+			"legal_basis": "Federal Trade Commission Act",
+			"penalty_amount": "5000000000",
+			"penalty_types": "fine",
+			"regulatory_domain": "data_protection",
+			"subject_names": "Facebook"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "R v Jordan",
+		"tag": "legal.judicial",
+		"params": {
+			"jurisdiction": "CA",
+			"case_id": "2016scc27",
+			"database_id": "csc-scc",
+			"case_number": "2016 SCC 27",
+			"court": "Supreme Court of Canada",
+			"judgment_date": "2016-07-08",
+			"language": "en",
+			"document_type": "judgment"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "劳动合同纠纷",
+		"tag": "legal.judicial",
+		"params": {
+			"jurisdiction": "CN",
+			"cause_of_action": "劳动合同纠纷",
+			"procedure": "first_instance",
+			"service": "case"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "right to a fair hearing France",
+		"tag": "legal.judicial",
+		"params": {
+			"jurisdiction": "ECHR",
+			"respondent": "FRA",
+			"doc_type": "JUDGMENT",
+			"legal_basis": "Article 6"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Clean Air Act regulations",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "US",
+			"collection": "CFR",
+			"title": "40",
+			"agency": "environmental-protection-agency",
+			"date_from": "2020-01-01",
+			"date_to": "2026-01-01"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Clean Air Act bills",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "US",
+			"collection": "BILLS",
+			"congress": "119",
+			"legal_level": "bill",
+			"language": "en"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中华人民共和国民法典",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "CN",
+			"article_number": "第二十条",
+			"document_number": "主席令第四十五号",
+			"effective_from": "2021-01-01",
+			"effective_to": "2026-12-31",
+			"effective_status": "effective",
+			"historical": "true",
+			"issuing_authority": "全国人民代表大会",
+			"legal_level": "statute",
+			"doc_type": "law",
+			"service": "law"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Canadian federal environmental regulations",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "CA",
+			"database_id": "car",
+			"resource_kind": "rules"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Environmental Protection Agency Clean Air Act Federal Register final rule",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "US",
+			"collection": "FR"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "42 USC 7401 Clean Air Act",
+		"tag": "legal.legislation",
+		"params": {
+			"jurisdiction": "US",
+			"collection": "USCODE"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold citations",
+		"tag": "academic.citation",
+		"params": {
+			"id": "10.1038/s41586-021-03819-2",
+			"op": "citations",
+			"filter": "creation:>2020,author_sc:no",
+			"sort": "creation:desc"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold references",
+		"tag": "academic.citation",
+		"params": {
+			"id": "10.1038/s41586-021-03819-2",
+			"op": "references",
+			"sort": "creation:asc"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold citation count",
+		"tag": "academic.citation",
+		"params": {
+			"id": "10.1038/s41586-021-03819-2",
+			"op": "citation-count"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold reference count",
+		"tag": "academic.citation",
+		"params": {
+			"id": "10.1038/s41586-021-03819-2",
+			"op": "reference-count"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "large language models",
+		"tag": "academic.citation",
+		"params": {
+			"id": "",
+			"op": "metadata",
+			"type": "journal_article,preprint",
+			"year": "2023"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Josiah Carberry publications",
+		"tag": "academic.citation",
+		"params": {
+			"id": "0000-0002-1825-0097",
+			"op": "author"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Scientometrics citation count",
+		"tag": "academic.citation",
+		"params": {
+			"id": "0138-9130",
+			"op": "venue-citation-count"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "research software",
+		"tag": "academic.dataset",
+		"params": {
+			"resource_type": "Software",
+			"year": "2024"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "useEffect\\(",
+		"tag": "code.snippet",
+		"params": {
+			"regex": true,
+			"lang": "TypeScript"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "useState",
+		"tag": "code.snippet",
+		"params": {
+			"regex": false
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple dividends",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "US",
+			"type": "dividends",
+			"symbol": "AAPL",
+			"date_type": "ex",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US IPO calendar",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "US",
+			"type": "ipos",
+			"date_type": "listing",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US economic calendar",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "US",
+			"type": "economic",
+			"currency": "USD",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "interest rate decisions",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "US",
+			"type": "economic",
+			"event": "interest rate",
+			"date_range": "2026-11-20..2026-12-31"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "A股业绩预告",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "CN",
+			"type": "forecast",
+			"report_period": "2026Q3"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "A股业绩快报",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "CN",
+			"type": "express",
+			"report_period": "2026Q3"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "上交所交易日历",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "CN",
+			"type": "trade_cal",
+			"exchange": "SSE",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "A股 回购",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "CN",
+			"type": "corporate_action",
+			"event_type": "repurchase",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "HK dividends calendar",
+		"tag": "finance.calendar",
+		"params": {
+			"market": "HK",
+			"type": "dividends",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple quarterly overview",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "overview",
+			"symbol": "AAPL",
+			"report_basis": "single_quarter"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple annual income statement",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "income",
+			"symbol": "AAPL",
+			"selection": "report_end_date",
+			"report_period": "2025"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple balance sheets",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "balance",
+			"symbol": "AAPL",
+			"date_range": "2025-10-01..2026-11-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple cash flow statement",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "cashflow",
+			"symbol": "AAPL",
+			"report_basis": "cumulative"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple valuation metrics",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "metrics",
+			"symbol": "AAPL",
+			"metric_ids": "pe_ttm,pb,roe"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple analyst ratings",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "ratings",
+			"symbol": "AAPL",
+			"aggregation": "individual"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple consensus ratings",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "ratings",
+			"symbol": "AAPL",
+			"aggregation": "consensus"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple earnings estimates",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "estimates",
+			"symbol": "AAPL",
+			"aggregation": "consensus"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "SPY holdings",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "fund_holding",
+			"symbol": "SPY"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple annual report filing",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "US",
+			"type": "regulatory_filing",
+			"symbol": "AAPL",
+			"document_type": "10-K"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台利润表",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "CN",
+			"type": "income",
+			"symbol": "600519.SH"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台股东",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "CN",
+			"type": "holder",
+			"symbol": "600519.SH",
+			"period": "1y"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "沪深300ETF持仓",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "CN",
+			"type": "fund_holding",
+			"symbol": "510300.SH"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Tencent fundamentals",
+		"tag": "finance.fundamental",
+		"params": {
+			"market": "HK",
+			"type": "overview",
+			"symbol": "0700.HK"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US CPI",
+		"tag": "finance.macro",
+		"params": {
+			"market": "US",
+			"type": "cpi",
+			"measure": "level",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US GDP",
+		"tag": "finance.macro",
+		"params": {
+			"market": "US",
+			"type": "gdp",
+			"date_range": "2025-01-01..2026-11-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US unemployment rate",
+		"tag": "finance.macro",
+		"params": {
+			"market": "US",
+			"type": "unemployment",
+			"period": "180d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US nonfarm payrolls",
+		"tag": "finance.macro",
+		"params": {
+			"market": "US",
+			"type": "nonfarm",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国GDP同比增速",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "gdp",
+			"measure": "yoy",
+			"period": "365d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国CPI环比",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "cpi",
+			"measure": "mom",
+			"period": "365d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国制造业PMI",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "pmi",
+			"measure": "level",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Shibor overnight",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "shibor",
+			"tenor": "overnight",
+			"period": "14d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "LPR 5-year",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "lpr",
+			"tenor": "5y",
+			"period": "90d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国货币供应量同比",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "money_supply",
+			"measure": "yoy",
+			"period": "365d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "中国社会融资规模增量",
+		"tag": "finance.macro",
+		"params": {
+			"market": "CN",
+			"type": "social_finance",
+			"measure": "cumulative",
+			"period": "365d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple earnings call transcript",
+		"tag": "finance.news",
+		"params": {
+			"market": "US",
+			"type": "transcript",
+			"symbol": "AAPL",
+			"report_period": "2026Q4"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US market news",
+		"tag": "finance.news",
+		"params": {
+			"market": "US",
+			"type": "general",
+			"content_scope": "summary",
+			"date_range": "2026-11-20..2026-11-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "global market news",
+		"tag": "finance.news",
+		"params": {
+			"market": "GLOBAL",
+			"type": "general",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple stock news",
+		"tag": "finance.news",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"symbol": "AAPL",
+			"content_scope": "full_text",
+			"period": "7d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple daily price history",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"symbol": "AAPL",
+			"operation": "history",
+			"frequency": "1d",
+			"period": "30d"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple weekly price history",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"symbol": "AAPL",
+			"operation": "history",
+			"frequency": "1w",
+			"date_range": "2026-01-01..2026-11-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Apple intraday minute bars",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"symbol": "AAPL",
+			"operation": "minute",
+			"frequency": "1m"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "SPY quote",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "etf",
+			"symbol": "SPY"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "SPY fund profile",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "etf",
+			"symbol": "SPY",
+			"operation": "fund_profile"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "S&P 500 index",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "index",
+			"symbol": "^GSPC"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "US sector performance",
+		"tag": "finance.quote",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"operation": "group_performance"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "沪深300ETF净值",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "fund",
+			"symbol": "510300.SH",
+			"operation": "nav",
+			"nav_type": "adjusted"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台历史行情",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"symbol": "600519.SH",
+			"operation": "history",
+			"adjustment": "qfq",
+			"date_range": "2026-11-01..2026-11-27"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台资金流向",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"symbol": "600519.SH",
+			"operation": "moneyflow"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台融资融券",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"symbol": "600519.SH",
+			"operation": "margin"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "贵州茅台交易活跃度",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"symbol": "600519.SH",
+			"operation": "trading_activity"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "沪深300板块表现",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "index",
+			"symbol": "000300.SH",
+			"operation": "group_performance"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "沪深300股指期货",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "futures",
+			"symbol": "IF2612.CFX"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "兴业转债",
+		"tag": "finance.quote",
+		"params": {
+			"market": "CN",
+			"type": "convertible_bond",
+			"symbol": "113052.SH"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Tencent stock price",
+		"tag": "finance.quote",
+		"params": {
+			"market": "HK",
+			"type": "stock",
+			"symbol": "0700.HK"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "EUR USD exchange rate",
+		"tag": "finance.quote",
+		"params": {
+			"market": "GLOBAL",
+			"type": "forex",
+			"symbol": "EURUSD"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "bitcoin price",
+		"tag": "finance.quote",
+		"params": {
+			"market": "GLOBAL",
+			"type": "crypto",
+			"symbol": "BTCUSD"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "gold price",
+		"tag": "finance.quote",
+		"params": {
+			"market": "GLOBAL",
+			"type": "commodity",
+			"symbol": "XAUUSD"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "commodity prices",
+		"tag": "finance.quote",
+		"params": {
+			"market": "GLOBAL",
+			"type": "commodity"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "largest US stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"registration_country": "US"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "NASDAQ technology stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"exchange": "NASDAQ",
+			"sector": "Information Technology"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "电子行业股票",
+		"tag": "finance.screen",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"industry": "SW2021:801080.SI"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "mid-cap value stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"market_cap": "1e9..5e10",
+			"pe": "0..30"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "dividend growth stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"dividend_yield": "0..5",
+			"roe": "10..40"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "largest US stocks page 2",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"sort": "-market_cap",
+			"page": 2
+		},
+		"max_results": 1
+	},
+	{
+		"query": "A股估值快照",
+		"tag": "finance.screen",
+		"params": {
+			"market": "CN",
+			"type": "stock",
+			"snapshot_date": "2026-11-25"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "沪深300成分股",
+		"tag": "finance.screen",
+		"params": {
+			"market": "CN",
+			"type": "index_weight",
+			"symbol": "000300.SH"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "SPY ETF",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "etf",
+			"symbol": "SPY"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Financials stocks",
+		"tag": "finance.screen",
+		"params": {
+			"market": "US",
+			"type": "stock",
+			"sector": "Financials"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "1.1.1.1",
+		"tag": "security.asset",
+		"params": {
+			"target": "1.1.1.1"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "example.com",
+		"tag": "security.malware",
+		"params": {
+			"ioc": "example.com"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "1.1.1.1",
+		"tag": "security.threat_intel",
+		"params": {
+			"target": "1.1.1.1"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "APT29",
+		"tag": "security.threat_intel",
+		"params": {
+			"target": "APT29",
+			"type": "actor"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "T1566",
+		"tag": "security.threat_intel",
+		"params": {
+			"target": "T1566",
+			"type": "technique"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Hide on Bush Yasuo mastery",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "mastery",
+			"game_name": "Hide on Bush#KR1",
+			"region": "kr",
+			"champion": "Yasuo",
+			"count": 3
+		},
+		"max_results": 3
+	},
+	{
+		"query": "Portal 2 price",
+		"tag": "gaming.store",
+		"params": {
+			"language": "en",
+			"region": "us"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Flights from Beijing to Shanghai",
+		"tag": "travel.flight",
+		"params": {
+			"departure": "Beijing",
+			"arrival": "Shanghai",
+			"date": "2026-12-27",
+			"adults": 1,
+			"cabin_class": "Business",
+			"currency": "CNY",
+			"max_stops": 1
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Hide on Bush recent matches",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "player",
+			"game_name": "Hide on Bush#KR1",
+			"region": "kr"
+		},
+		"max_results": 3
+	},
+	{
+		"query": "Hide on Bush ranked stats",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "ranked",
+			"game_name": "Hide on Bush#KR1",
+			"region": "kr"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Hide on Bush live game",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "live_game",
+			"game_name": "Hide on Bush#KR1",
+			"region": "kr"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "Infinity Edge",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "item"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "League of Legends free champion rotation",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "champion_rotation",
+			"region": "kr"
+		},
+		"max_results": 2
+	},
+	{
+		"query": "League of Legends match",
+		"tag": "gaming.esports",
+		"params": {
+			"type": "match_detail",
+			"match_id": "KR_7482819248"
+		},
+		"max_results": 1
+	},
+	{
+		"query": "AlphaFold protein structure prediction",
+		"tag": "academic.paper",
+		"params": {
+			"doi": "https://doi.org/10.1038/s41586-021-03819-2"
+		},
+		"max_results": 1
+	}
 ]

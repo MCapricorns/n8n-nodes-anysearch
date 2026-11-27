@@ -21,13 +21,10 @@ const rules = new Map(
 		...technicalParameterRules,
 	}),
 );
-const statementTypes = new Set(['income', 'balance', 'cashflow', 'indicator', 'holder']);
+// Fields whose catalog description allows an empty value.
 const emptyFields: Record<string, string[]> = {
-	'academic.citation': ['id_type'],
-	'finance.calendar': ['cn_code', 'symbol'],
-	'finance.news': ['cn_code', 'symbol'],
+	// "return date, empty = one-way"
 	'travel.flight': ['return_date'],
-	'travel.flight_status': ['departure'],
 };
 
 // Only render public catalog field names from a recognized validation response.
@@ -39,33 +36,6 @@ export function missingParameterMessage(message: unknown): string | undefined {
 	if (!match) return undefined;
 	const fields = definitions.get(match[1]);
 	return match[2].split(', ').every((field) => fields?.[field]?.required) ? message : undefined;
-}
-
-function normalizeParameters(tag: string, input: IDataObject): IDataObject {
-	const type = typeof input.type === 'string' ? input.type.trim() : input.type;
-	const params = type === input.type ? input : { ...input, type };
-	if (tag === 'travel.flight_status' && params.departure === undefined) {
-		return { ...params, departure: '' };
-	}
-	if (tag === 'finance.fundamental') {
-		if (type === 'overview') {
-			return { ...params, symbol: params.symbol === undefined ? '' : params.symbol, cn_code: '' };
-		}
-		if (typeof type === 'string' && statementTypes.has(type)) return { ...params, symbol: '' };
-	}
-	if (tag === 'finance.calendar' && type === 'earnings' && params.period === undefined) {
-		return { ...params, period: '90d' };
-	}
-	return params;
-}
-
-function allowsEmpty(tag: string, field: string, type: unknown): boolean {
-	if (tag === 'finance.fundamental')
-		return field === 'symbol' || (field === 'cn_code' && type === 'overview');
-	if (tag === 'finance.quote') {
-		return field === 'cn_code' || (field === 'symbol' && type !== 'crypto');
-	}
-	return emptyFields[tag]?.includes(field) ?? false;
 }
 
 export function capabilityParameters(
@@ -91,7 +61,7 @@ export function capabilityParameters(
 		);
 	}
 
-	const params = normalizeParameters(tag, input ?? {});
+	const params = input ?? {};
 	if (Object.keys(params).some((field) => !Object.prototype.hasOwnProperty.call(fields, field))) {
 		throw new NodeOperationError(
 			node,
@@ -115,13 +85,7 @@ export function capabilityParameters(
 	for (const field of validationOrder) {
 		const value = params[field];
 		if (value === undefined) continue;
-		if (value === '' && allowsEmpty(tag, field, params.type)) {
-			const submitted = input?.[field];
-			if (submitted !== undefined && typeof submitted !== 'string') {
-				throw new NodeOperationError(node, `For ${tag}, ${field} must be a string.`);
-			}
-			continue;
-		}
+		if (value === '' && emptyFields[tag]?.includes(field)) continue;
 		const configuredRule = capability?.fields?.[field];
 		const rule =
 			configuredRule?.applies && !configuredRule.applies(params) ? undefined : configuredRule;

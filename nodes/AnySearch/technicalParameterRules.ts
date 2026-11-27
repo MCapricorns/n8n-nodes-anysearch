@@ -1,30 +1,35 @@
+import type { IDataObject } from 'n8n-workflow';
 import type { CapabilityRuleMap, FieldRule } from './parameterRules';
-import { choice, dateValue, format, integer } from './parameterRules';
+import { anyCaseCurrency, choice, dateValue, format, integer, wholeNumber } from './parameterRules';
 
 const airport = format(/^[a-z]{3}$/i, 'a three-letter IATA airport code');
-const flightCurrency = format(/^[a-z]{3}$/i, 'a three-letter currency code such as USD or CNY');
+// "IATA 3-letter airport or city code … or a city name"; names with an apostrophe do not resolve.
+const location = format(
+	/^(?:[a-z]{3}|\p{L}+(?:[ -]\p{L}+)*)$/iu,
+	'a three-letter IATA airport or city code, or a city name',
+);
 const count = integer(0);
 const flightDate = dateValue('DD/MM/YYYY', 'YYYY-MM-DD');
+const flightNumber = format(/^(?:[a-z][a-z\d]|\d[a-z]) ?\d{1,4}[a-z]?$/i, 'an IATA flight number');
+
+// "return date, empty = one-way; must not be earlier than date"
+function dayNumber(value: string): number {
+	return Number(
+		value.includes('/') ? value.split('/').reverse().join('') : value.replace(/\D/g, ''),
+	);
+}
+function checkFlight({ date, return_date }: IDataObject): string | undefined {
+	if (typeof date !== 'string' || typeof return_date !== 'string' || return_date === '')
+		return undefined;
+	return dayNumber(return_date) < dayNumber(date)
+		? 'return_date must not be earlier than date.'
+		: undefined;
+}
 
 const dnsName =
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/i;
 const urlScheme = /^[a-z][a-z\d+.-]*:\/\//i;
 const ipv6Candidate = /^[a-f\d.]*:[a-f\d.]*:[a-f\d:.]*$/i;
-
-function isIntelHash(value: string): boolean {
-	// Intel leaves hash algorithms open, including digests with an algorithm prefix.
-	if (!/^[a-z\d+/_-]+(?::[a-z\d+/_-]+)*={0,2}$/i.test(value)) return false;
-	const digest = value.slice(value.lastIndexOf(':') + 1);
-	if (urlScheme.test(value)) {
-		// A prefixed Base64 digest may start with "//". Keep special URL schemes on the URL path.
-		if (/^(?:ftp|file|https?|wss?):/i.test(value)) return false;
-		const encoded = Buffer.from(digest, 'base64').toString('base64');
-		return digest === encoded || digest === encoded.replace(/=+$/, '');
-	}
-	if (/[a-z\d]/i.test(digest)) return true;
-	// Symbols alone can encode bytes in Base64 or Base64url only in complete quartets.
-	return /^(?:(?:[+/]{4})+|(?:[-_]{4})+)$/.test(digest);
-}
 
 function isIPv4(value: string): boolean {
 	const octets = value.split('.');
@@ -34,6 +39,35 @@ function isIPv4(value: string): boolean {
 	);
 }
 
+function isIPv6(value: string): boolean {
+	if (!ipv6Candidate.test(value)) return false;
+	try {
+		return new URL(`https://[${value}]`).hostname.startsWith('[');
+	} catch {
+		return false;
+	}
+}
+
+function isDomain(value: string): boolean {
+	if (/[\s:/\\?#@%]/.test(value)) return false;
+	try {
+		const { hostname } = new URL(`https://${value}`);
+		// The DNS length includes a byte for each label length and one for the root.
+		return hostname.replace(/\.$/, '').length <= 253 && dnsName.test(hostname) && !isIPv4(hostname);
+	} catch {
+		return false;
+	}
+}
+
+function isUrl(value: string): boolean {
+	if (!urlScheme.test(value)) return false;
+	try {
+		return new URL(value).hostname !== '';
+	} catch {
+		return false;
+	}
+}
+
 function isNetworkIndicator(value: string): boolean {
 	if (isIPv4(value)) return true;
 	const hasScheme = urlScheme.test(value);
@@ -41,18 +75,26 @@ function isNetworkIndicator(value: string): boolean {
 	const isIPv6Candidate = ipv6Candidate.test(value);
 	if (!hasScheme && !isHostName && !isIPv6Candidate) return false;
 	try {
+		// The URL parser converts internationalized domain names to ASCII.
 		const authority = isIPv6Candidate ? `[${value}]` : value;
 		const { hostname } = new URL(hasScheme ? value : `https://${authority}`);
 		if (isIPv6Candidate) return hostname.startsWith('[');
 		if (hasScheme)
 			return hostname.startsWith('[') || (/[a-z\d]/i.test(hostname) && !/[,;]/.test(hostname));
-		// The DNS length includes a byte for each label length and one for the root.
-		const bareHostname = hostname.replace(/\.$/, '');
-		return bareHostname.length <= 253 && dnsName.test(hostname) && !isIPv4(hostname);
+		const bare = hostname.replace(/\.$/, '');
+		return (
+			// The DNS length includes a byte for each label length and one for the root.
+			bare.length <= 253 &&
+			dnsName.test(hostname) &&
+			!isIPv4(bare) &&
+			!/^\d+(?:\.\d+){3}$/.test(bare)
+		);
 	} catch {
 		return false;
 	}
 }
+
+const hash = (value: string) => /^(?:[a-f\d]{32}|[a-f\d]{40}|[a-f\d]{64})$/i.test(value);
 
 function indicator(isHash: (value: string) => boolean, expected: string): FieldRule {
 	return {
@@ -62,6 +104,21 @@ function indicator(isHash: (value: string) => boolean, expected: string): FieldR
 			((!ipv6Candidate.test(value) && isHash(value)) || isNetworkIndicator(value)),
 		expected,
 	};
+}
+
+// "Optional subject type: ip / domain / url / hash / actor / technique / software / campaign."
+const subjectTypes: Record<string, (target: string) => boolean> = {
+	ip: (target) => isIPv4(target) || isIPv6(target),
+	domain: isDomain,
+	url: isUrl,
+	hash,
+};
+function checkThreatIntel({ type, target }: IDataObject): string | undefined {
+	if (typeof type !== 'string' || typeof target !== 'string') return undefined;
+	if (!Object.prototype.hasOwnProperty.call(subjectTypes, type)) return undefined;
+	return subjectTypes[type](target)
+		? undefined
+		: `target must be a single ${type} when type is ${type}.`;
 }
 
 const packageRegistries = new Set([
@@ -126,24 +183,21 @@ const vulnerabilityValue: FieldRule = {
 };
 
 export const technicalParameterRules: CapabilityRuleMap = {
-	'security.intel': {
-		fields: { ioc: indicator(isIntelHash, 'a single domain, IP address, URL, or file hash') },
-	},
-	'security.noise': {
+	'security.asset': {
 		fields: {
-			ip: {
-				matches: (value) => typeof value === 'string' && isIPv4(value),
-				expected: 'a single IPv4 address',
-			},
+			target: indicator(() => false, 'a single IPv4 or IPv6 address, domain name, or URL'),
 		},
 	},
-	'security.scan': {
+	'security.malware': {
 		fields: {
-			ioc: indicator(
-				(value) => /^(?:[a-f\d]{32}|[a-f\d]{40}|[a-f\d]{64})$/i.test(value),
-				'a domain, IP address, URL, or MD5, SHA1, or SHA256 hash',
-			),
+			ioc: indicator(hash, 'a domain, IP address, URL, or MD5, SHA1, or SHA256 hash'),
 		},
+	},
+	'security.threat_intel': {
+		fields: {
+			type: choice('ip', 'domain', 'url', 'hash', 'actor', 'technique', 'software', 'campaign'),
+		},
+		check: checkThreatIntel,
 	},
 	'security.vuln': {
 		fields: { type: choice('cve', 'commit', 'package'), value: vulnerabilityValue },
@@ -160,23 +214,23 @@ export const technicalParameterRules: CapabilityRuleMap = {
 	'travel.flight': {
 		fields: {
 			adults: count,
-			arrival: airport,
+			arrival: location,
 			cabin_class: choice('Economy', 'Business', 'First', 'PremiumEconomy'),
 			children: count,
-			currency: flightCurrency,
+			currency: anyCaseCurrency,
 			date: flightDate,
-			departure: airport,
+			departure: location,
 			infants: count,
+			max_stops: wholeNumber(0, 1),
 			return_date: flightDate,
-			type: choice('FlightSearch'),
 		},
+		check: checkFlight,
 	},
 	'travel.flight_status': {
 		fields: {
-			date: dateValue('YYYY-MM-DD'),
+			date: dateValue('YYYY-MM-DD', 'YYYYMMDD', 'YYYY/MM/DD'),
 			departure: airport,
-			flight_number: format(/^(?:[a-z][a-z\d]|\d[a-z]) ?\d{1,4}[a-z]?$/i, 'an IATA flight number'),
-			type: choice('FlightStatus'),
+			flight_number: flightNumber,
 		},
 	},
 };

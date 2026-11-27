@@ -98,17 +98,15 @@ test('only matching, non-empty output joined to the actual request can pass cata
 	assert.equal(catalogRequestReport(records, requests, domains).unverified.length, 1);
 });
 
-test('a complete expected request can include documented normalization and no extra fields', () => {
+test('the outgoing request must equal the recorded catalog input with no added fields', () => {
 	const input = {
 		query: 'AAPL fiscal calendar',
 		tag: 'finance.calendar',
 		params: { type: 'earnings' },
 	};
 	const { records, requests } = matrix([input], [[{ title: 'AAPL earnings calendar', url: '' }]]);
-	records[0].expectedParams = { type: 'earnings', period: '90d' };
-	requests[0].body = { ...input, params: records[0].expectedParams };
-	assert.equal(checkMatrix(records, requests, domains).unverified.length, 1);
-	requests[0].body = { ...input, params: { ...records[0].expectedParams, cn_code: '600519.SH' } };
+	assert.equal(checkMatrix(records, requests, domains).verified, 1);
+	requests[0].body = { ...input, params: { type: 'earnings', period: '90d' } };
 	assert.throws(() => checkMatrix(records, requests, domains), /Outgoing search body/);
 	assert.throws(() => checkMatrix([], [], domains), /matrix is empty/);
 	const generic = matrix(
@@ -122,7 +120,7 @@ test('fundamental overview distinguishes similar tickers and fiscal periods', ()
 	const input = {
 		query: 'Apple Inc (AAPL) fundamentals',
 		tag: 'finance.fundamental',
-		params: { type: 'overview', symbol: 'AAPL', cn_code: '', period: 'annual' },
+		params: { market: 'US', type: 'overview', symbol: 'AAPL' },
 	};
 	const annual = {
 		title: 'AAPL — Annual Fundamental',
@@ -136,10 +134,10 @@ test('fundamental overview distinguishes similar tickers and fiscal periods', ()
 	};
 	assert.equal(assessSearchResults(input, [annual]).status, 'verified');
 	assert.equal(assessSearchResults(input, [wrongTicker]).status, 'mismatch');
-	const inferred = { ...input, params: { type: 'overview', symbol: '', cn_code: '' } };
-	assert.equal(assessSearchResults(inferred, [wrongTicker]).status, 'mismatch');
+	const marketWide = { ...input, params: { market: 'US', type: 'overview' } };
+	assert.equal(assessSearchResults(marketWide, [wrongTicker]).status, 'mismatch');
 	assert.equal(
-		assessSearchResults({ ...inferred, query: 'Apple fundamentals' }, [annual]).status,
+		assessSearchResults({ ...marketWide, query: 'Apple fundamentals' }, [annual]).status,
 		'unverified',
 	);
 	const quarter = {
@@ -149,8 +147,9 @@ test('fundamental overview distinguishes similar tickers and fiscal periods', ()
 	};
 	assert.equal(assessSearchResults(input, [quarter]).status, 'mismatch');
 	assert.equal(
-		assessSearchResults({ ...input, params: { ...input.params, period: 'quarter' } }, [quarter])
-			.status,
+		assessSearchResults({ ...input, params: { ...input.params, report_basis: 'single_quarter' } }, [
+			quarter,
+		]).status,
 		'verified',
 	);
 	assert.equal(
@@ -205,32 +204,46 @@ test('catalog drift covers flags and descriptions as well as new, removed and st
 	assert.deepEqual(coverage.unexpected.sort(), ['finance.calendar.retired', 'old.tag']);
 });
 
-const financeSources = {
-	sina: 'finance.sina.com.cn',
-	wallstreetcn: 'wallstreetcn.com',
-	'10jqka': 'news.10jqka.com.cn',
-	eastmoney: 'finance.eastmoney.com',
-	cls: 'www.cls.cn',
-	yicai: 'www.yicai.com',
-	yuncaijing: 'www.yuncaijing.com',
-	fenghuang: 'finance.ifeng.com',
-	jinrongjie: 'finance.jrj.com.cn',
-};
-test('each financial flash source must supply its own result link', () => {
-	for (const [news_src, host] of Object.entries(financeSources)) {
-		const input = { tag: 'finance.news', params: { type: 'flash', news_src } };
-		checkSearchResults(input, [{ url: 'https://' + host + '/news/123' }]);
-		for (const url of [
-			'',
-			'https://finance.yahoo.com/news/123',
-			'https://' + host + '.example.org/news/123',
-		]) {
-			assert.throws(
-				() => checkSearchResults(input, [{ title: 'Market news', url }]),
-				/financial flash/,
-			);
-		}
-	}
+test('long-form articles are recognized by the metadata block of their snippet', () => {
+	const sina = { tag: 'finance.news', params: { type: 'long_form', news_src: 'sina' } };
+	const article = {
+		title: '广发证券：维持买入评级 长篇资讯',
+		url: '',
+		snippet:
+			'src=新浪财经 | content_scope=summary | content_length=1200 | content_truncated=true | pub_time=2026-11-27 10:08:00 | title=广发证券 | content= 广发证券发布研报称',
+	};
+	checkSearchResults(sina, [article]);
+	assert.throws(
+		() =>
+			checkSearchResults(sina, [
+				{ ...article, snippet: article.snippet.replace('新浪财经', '财联社') },
+			]),
+		/long_form article from sina/,
+	);
+	// A source without articles answers with a coverage status instead of a hit.
+	assert.deepEqual(
+		assessSearchResults(sina, [
+			{
+				title: 'Coverage status',
+				url: '',
+				snippet:
+					'coverage_reason: major_news returned no rows for the requested window and source coverage_status: no_data has_more: false',
+			},
+		]),
+		{ status: 'unverified', reason: 'news_src sina returned coverage_status no_data' },
+	);
+	// The display names of the other sources are still being observed.
+	const wallstreetcn = { ...sina, params: { ...sina.params, news_src: 'wallstreetcn' } };
+	assert.equal(assessSearchResults(wallstreetcn, [article]).status, 'unverified');
+	assert.deepEqual(
+		assessSearchResults(wallstreetcn, [
+			{ ...article, snippet: article.snippet.replace('src=新浪财经 | ', '') },
+		]),
+		{
+			status: 'unverified',
+			reason: 'The long_form record for news_src wallstreetcn names no source',
+		},
+	);
 });
 
 const socialLinks = {
@@ -328,7 +341,7 @@ test('ECHR acceptance needs a judgment record and respondent evidence', () => {
 test('paper and citation metadata require the exact DOI of the result', () => {
 	const doi = '10.1038/s41586-021-03819-2';
 	for (const input of [
-		{ tag: 'academic.citation', params: { op: 'metadata', id: doi, id_type: 'doi' } },
+		{ tag: 'academic.citation', params: { op: 'metadata', id: doi } },
 		{ tag: 'academic.paper', params: { doi } },
 	]) {
 		checkSearchResults(input, [{ url: 'https://doi.org/' + doi.toUpperCase() }]);
@@ -353,40 +366,60 @@ test('match and player results identify the requested object', () => {
 	const match_id = 'KR_7482819248';
 	const matchUrl = 'https://www.leagueofgraphs.com/match/kr/7482819248';
 	const input = { tag: 'gaming.esports', params: { type: 'match_detail', match_id } };
+	const row = JSON.stringify({
+		matchId: match_id,
+		name: 'Player#KR1',
+		championName: 'Galio',
+		kills: 7,
+	});
 	checkSearchResults(input, [{ url: matchUrl }]);
-	for (const url of [
-		'https://lolesports.com/',
-		matchUrl + '0',
-		matchUrl.replace('/kr/', '/na/'),
-		'https://example.org/?match=' + match_id,
-	]) {
-		assert.throws(() => checkSearchResults(input, [{ title: match_id, url }]), /Expected match/);
-	}
+	checkSearchResults(input, [{ url: matchUrl + '#p1', content: row }]);
+	// An unknown match is answered with a no_data record for that ID.
+	const noData = (subject) =>
+		JSON.stringify({
+			detail: 'Match ID does not exist',
+			kind: 'match',
+			status: 'no_data',
+			subject,
+		});
+	checkSearchResults(input, [
+		{ title: 'No match found: ' + match_id, url: '', content: noData(match_id) },
+	]);
+	for (const result of [
+		{ url: 'https://lolesports.com/' },
+		{ url: matchUrl + '0' },
+		{ url: matchUrl.replace('/kr/', '/na/') },
+		{ url: 'https://example.org/?match=' + match_id },
+		{ url: matchUrl, content: row.replace(match_id, 'KR_7482819247') },
+		{ url: '', content: noData('KR_7482819247') },
+	])
+		assert.throws(() => checkSearchResults(input, [result]), /Expected match/);
 	const player = {
 		tag: input.tag,
 		params: { type: 'player', region: 'kr', game_name: 'Hide on Bush#KR1' },
 	};
-	const profile = 'https://www.op.gg/lol/summoners/kr/Hide%20on%20bush-KR1';
+	const profile = 'https://www.op.gg/summoners/kr/Hide%20on%20Bush-KR1';
 	checkSearchResults(player, [{ url: profile }]);
-	const participant = { riotIdGameName: 'Hide on bush', riotIdTagline: 'KR1' };
-	const content = JSON.stringify({
-		metadata: { matchId: match_id },
-		info: { participants: [participant] },
+	// A recent-match row names its match and region but not the player.
+	const recent = 'https://www.leagueofgraphs.com/match/kr/8421752997';
+	const recentRow = JSON.stringify({ matchId: 'KR_8421752997', championName: 'Galio', kills: 7 });
+	assert.deepEqual(assessSearchResults(player, [{ url: recent, content: recentRow }]), {
+		status: 'unverified',
+		reason: 'Recent match rows do not identify the player',
 	});
-	checkSearchResults(player, [{ url: matchUrl, content }]);
 	for (const result of [
-		{ url: 'https://example.org/unrelated', content },
+		{ url: recent.replace('/kr/', '/na/'), content: recentRow },
+		{ url: recent, content: recentRow.replace('KR_8421752997', 'KR_1') },
 		{ url: profile.replace('KR1', 'KR2') },
 		{ url: profile.replace('/kr/', '/na/') },
-		{ url: matchUrl, content: content.replace('Hide on bush', 'Other player') },
 	])
-		assert.throws(() => checkSearchResults(player, [result]), /profile or match/);
+		assert.throws(() => checkSearchResults(player, [result]), /profile or match record/);
 });
 
 test('a populated structured record can have a blank URL without qualifying as a source hit', () => {
 	const results = [{ title: '贵州茅台 600519.SH', content: '收盘价 1500', url: '' }];
 	checkSearchResults(
-		{ tag: 'finance.quote', params: { type: 'stock', cn_code: '600519.SH' } },
+		{ tag: 'finance.quote', params: { market: 'CN', type: 'stock', symbol: '600519.SH' } },
 		results,
 	);
 	assert.throws(() => checkSearchResults(job, results), /linkedin_jobs/);
@@ -407,15 +440,16 @@ test('an earnings calendar lookup cannot pass with a quarterly news release or a
 		() => checkSearchResults(input, [{ ...hit, title: 'AAPLL Earnings (2027-02-04)' }]),
 		/calendar ticker/,
 	);
-	checkSearchResults({ tag: input.tag, params: { type: 'earnings', cn_code: '600519.SH' } }, [
-		{ title: '600519.SH 财报披露（20260930）已披露', url: '' },
-	]);
+	checkSearchResults(
+		{ tag: input.tag, params: { market: 'CN', type: 'earnings', symbol: '600519.SH' } },
+		[{ title: '600519.SH 财报披露（20260930）已披露', url: '' }],
+	);
 });
 
 test('data repositories, ORCIDs and media selectors reject neighboring result types', () => {
 	for (const [client_id, url] of [
 		['cern.zenodo', 'https://zenodo.org/records/123'],
-		['bl.dryad', 'https://doi.org/10.5061/dryad.123'],
+		['dryad.dryad', 'https://doi.org/10.5061/dryad.123'],
 		['figshare.ars', 'https://doi.org/10.6084/m9.figshare.123'],
 	]) {
 		const input = { tag: 'academic.dataset', params: { client_id } };
@@ -464,17 +498,14 @@ test('source IDs must agree with structured IDs and recognized publisher article
 	])
 		assert.throws(() => checkSearchResults(input, [row]), /DOI/);
 	const match = { tag: 'gaming.esports', params: { type: 'match_detail', match_id: 'KR_123' } };
-	const detail = {
-		metadata: { matchId: 'KR_123' },
-		info: { gameId: 123, participants: [{ championName: 'Galio' }] },
-	};
-	assert.equal(checkSearchResults(match, [{ url: '', content: JSON.stringify(detail) }]), true);
+	const row = { matchId: 'KR_123', name: 'Player#KR1', championName: 'Galio', kills: 1 };
+	assert.equal(checkSearchResults(match, [{ url: '', content: JSON.stringify(row) }]), true);
 	assert.throws(
 		() =>
 			checkSearchResults(match, [
 				{
 					url: 'https://leagueofgraphs.com/match/kr/123',
-					content: JSON.stringify({ ...detail, metadata: { matchId: 'KR_124' } }),
+					content: JSON.stringify({ ...row, matchId: 'KR_124' }),
 				},
 			]),
 		/Expected match/,
@@ -799,39 +830,6 @@ test('hot lists require the list itself or ranking data for the linked post', ()
 		assert.throws(() => hot(type, { url, ...extra }), /Expected/);
 });
 
-test('financial publishers identify individual flash items and exclude legal and navigation pages', () => {
-	const check = (news_src, row) =>
-		checkSearchResults({ tag: 'finance.news', params: { type: 'flash', news_src } }, [row]);
-	const bulletin = {
-		title: '央行公布最新利率',
-		content: 'SourceKind: flash-news | 央行公布最新利率',
-	};
-	for (const [source, host] of Object.entries(financeSources)) {
-		const item = { url: 'https://' + host + '/news/123', ...bulletin };
-		assert.equal(check(source, item), true);
-		assert.equal(check(source, { url: item.url, title: 'Publisher article' }), false);
-		assert.throws(
-			() => check(source, { ...item, content: 'SourceKind: general-news | See flash news' }),
-			/financial flash/,
-		);
-		for (const path of ['/privacy.html', '/terms', '/news/', '/news/index.html', '/about']) {
-			assert.throws(
-				() => check(source, { ...bulletin, url: 'https://' + host + path }),
-				/financial flash/,
-			);
-		}
-	}
-	assert.equal(check('wallstreetcn', { url: 'https://wallstreetcn.com/livenews/2981234' }), true);
-	assert.equal(check('yicai', { url: 'https://www.yicai.com/brief/102311234.html' }), true);
-	assert.equal(
-		check('sina', {
-			url: 'https://finance.sina.com.cn/roll/2026-11-27/doc-inexample123.shtml',
-			...bulletin,
-		}),
-		true,
-	);
-});
-
 test('earnings record identifiers must agree across the calendar header, JSON and title', () => {
 	const us = { tag: 'finance.calendar', params: { type: 'earnings', symbol: 'AAPL' } };
 	const valid = {
@@ -849,22 +847,20 @@ test('earnings record identifiers must agree across the calendar header, JSON an
 		{ title: 'Calendar', content: 'Earnings calendar; See also AAPL' },
 	])
 		assert.throws(() => checkSearchResults(us, [row]), /calendar/);
-	const cn = { tag: us.tag, params: { type: 'earnings', cn_code: '600519.SH' } };
+	const cn = { tag: us.tag, params: { market: 'CN', type: 'earnings', symbol: '600519.SH' } };
 	const local = {
 		title: '600519.SH 财报披露（20260930）已披露',
 		url: '',
 		content: '{"ts_code":"600519.SH","end_date":"20260930","actual_date":"20261031"}',
 	};
 	assert.equal(checkSearchResults(cn, [local]), true);
-	for (const params of [cn.params, { ...cn.params, symbol: '' }]) {
-		assert.throws(
-			() =>
-				checkSearchResults({ tag: cn.tag, params }, [
-					{ ...local, content: local.content.replace('600519.SH', '301199.SZ') },
-				]),
-			/calendar ticker/,
-		);
-	}
+	assert.throws(
+		() =>
+			checkSearchResults(cn, [
+				{ ...local, content: local.content.replace('600519.SH', '301199.SZ') },
+			]),
+		/calendar ticker/,
+	);
 });
 
 test('ORCID resolution rejects conflicting identity fields and ambiguous candidate lists', () => {
@@ -913,7 +909,7 @@ test('a dataset repository identifies a record rather than a policy, account or 
 	for (const [client_id, host, path] of [
 		['cern.zenodo', 'zenodo.org', '/record/8279574'],
 		['figshare.ars', 'figshare.com', '/articles/dataset/ghg-emissions_csv/14903061/1'],
-		['bl.dryad', 'datadryad.org', '/stash/dataset/doi:10.5061/dryad.123ab'],
+		['dryad.dryad', 'datadryad.org', '/stash/dataset/doi:10.5061/dryad.123ab'],
 	]) {
 		const input = { tag: 'academic.dataset', params: { client_id, resource_type: 'Dataset' } };
 		assert.equal(
@@ -1003,45 +999,59 @@ test('a requested paper ordering needs comparable distinct results even when rec
 });
 
 test('ranked, live game and champion mastery need evidence of the named operation', () => {
-	const url = 'https://www.op.gg/lol/summoners/kr/Hide%20on%20bush-KR1';
-	const input = (type, extra) => ({
+	const url = 'https://www.op.gg/summoners/kr/Hide%20on%20Bush-KR1';
+	const input = (type, extra = {}) => ({
 		tag: 'gaming.esports',
 		params: { type, region: 'kr', game_name: 'Hide on Bush#KR1', ...extra },
 	});
-	for (const type of ['ranked', 'live_game'])
-		assert.equal(checkSearchResults(input(type), [{ url, title: 'Player profile' }]), false);
+	const record = (fields) => ({
+		url,
+		content: JSON.stringify({ gameName: 'Hide on Bush', tagLine: 'KR1', ...fields }),
+	});
+	// A profile link alone shows neither a tier nor mastery points.
+	assert.equal(checkSearchResults(input('ranked'), [{ url, title: 'Player profile' }]), false);
 	assert.equal(
-		checkSearchResults(input('ranked'), [{ url, content: '{"tier":"GOLD","leaguePoints":97}' }]),
+		checkSearchResults(input('ranked'), [record({ tier: 'MASTER', rank: 'I', leaguePoints: 231 })]),
 		true,
 	);
-	const solo = input('ranked', { queue: 'RANKED_SOLO_5x5' });
-	const player = { url, tier: 'GOLD', leaguePoints: 97 };
-	assert.equal(assessSearchResults(solo, [player]).status, 'unverified');
-	assert.equal(checkSearchResults(solo, [{ ...player, queueId: 420 }]), true);
-	assert.throws(
-		() => checkSearchResults(solo, [{ ...player, queueType: 'RANKED_FLEX_SR' }]),
-		/Unexpected ranked queue/,
+	assert.deepEqual(assessSearchResults(input('mastery'), [{ url, title: 'Player profile' }]), {
+		status: 'unverified',
+		reason: 'No mastery record for Hide on Bush#KR1',
+	});
+	assert.equal(
+		checkSearchResults(input('mastery'), [
+			record({ championName: 'LeBlanc', points: 633199, level: 60 }),
+		]),
+		true,
 	);
 	const mastery = input('mastery', { champion: 'Yasuo' });
-	for (const [filter, championName] of [
-		['Lee', 'Lee Sin'],
-		['vi', 'Sivir'],
-	]) {
-		const record = { url, championName, championPoints: 1300 };
-		assert.equal(checkSearchResults(input('mastery', { champion: filter }), [record]), true);
-		assert.throws(() => checkSearchResults(mastery, [record]), /Expected mastery/);
-	}
+	checkSearchResults(mastery, [record({ championName: 'Yasuo', points: 225480 })]);
 	assert.throws(
-		() =>
-			checkSearchResults(mastery, [
-				{ url, snippet: 'Mastery Table ; Taliyah, 24, 236,743 pts ; Yasuo, 23, 225,480 pts' },
-			]),
+		() => checkSearchResults(mastery, [record({ championName: 'LeBlanc', points: 633199 })]),
 		/Expected mastery filtered to champion Yasuo/,
 	);
+	// A record for another player contradicts the request, whoever it links to.
 	assert.throws(
-		() => checkSearchResults(mastery, [{ url, content: 'Follow my Yasuo fan account' }]),
-		/mastery/,
+		() =>
+			checkSearchResults(input('mastery'), [
+				{
+					url,
+					content: JSON.stringify({
+						gameName: 'Other player',
+						tagLine: 'KR1',
+						championName: 'LeBlanc',
+						points: 1,
+					}),
+				},
+			]),
+		/profile record/,
 	);
+	// Only the answer for a player who is not in a game has been observed.
+	assert.equal(checkSearchResults(input('live_game'), [record({ inGame: false })]), true);
+	assert.deepEqual(assessSearchResults(input('live_game'), [record({ inGame: true })]), {
+		status: 'unverified',
+		reason: 'No live-game details for Hide on Bush#KR1',
+	});
 });
 
 test('catalog distinguishes unverified filters, source mismatches and nonempty-only cases', () => {
@@ -1071,7 +1081,11 @@ test('catalog distinguishes unverified filters, source mismatches and nonempty-o
 test('record identity alone does not verify additional requested filters', () => {
 	const doi = '10.1038/s41586-021-03819-2';
 	for (const [tag, params, result] of [
-		['academic.citation', { id: doi, min_citations: '100' }, { url: 'https://doi.org/' + doi }],
+		[
+			'finance.calendar',
+			{ market: 'US', type: 'dividends', symbol: 'AAPL' },
+			{ url: 'https://example.com/dividend', title: 'Quarterly dividend declared' },
+		],
 		[
 			'academic.person',
 			{ orcid: '0000-0002-1825-0097', affiliations: 'example university' },
@@ -1114,7 +1128,7 @@ test('record identity alone does not verify additional requested filters', () =>
 	}
 	const dataset = {
 		tag: 'academic.dataset',
-		params: { client_id: 'cern.zenodo', year_from: 2020, year_to: '2025' },
+		params: { client_id: 'cern.zenodo', year: '2020-2025' },
 	};
 	const result = { url: 'https://zenodo.org/records/123' };
 	assert.equal(assessSearchResults(dataset, [result]).status, 'unverified');
@@ -1187,28 +1201,36 @@ test('queue attribution, identity resolution and player-only mastery are inconcl
 		assessSearchResults(person, [{ url: 'https://orcid.org/0000-0003-0530-4305' }]).status,
 		'mismatch',
 	);
-	const profile = { url: 'https://masterychart.com/profile/kr/Hide+on+bush-KR1', title: 'Profile' };
-	const mastery = cases[93];
+	const profile = { url: 'https://www.op.gg/summoners/kr/Hide%20on%20Bush-KR1', title: 'Profile' };
+	const match = cases.find(
+		({ tag, params }) => tag === 'gaming.esports' && params.type === 'match_detail',
+	);
+	const mastery = cases.find(
+		({ tag, params }) => tag === 'gaming.esports' && params.type === 'mastery',
+	);
 	assert.equal(assessSearchResults(mastery, [profile]).status, 'unverified');
 	assert.equal(
 		assessSearchResults(mastery, [
-			{ ...profile, content: 'Mastery Table ; Yasuo, 23, 225,480 pts' },
+			{
+				...profile,
+				content: JSON.stringify({
+					gameName: 'Hide on Bush',
+					tagLine: 'KR1',
+					championName: 'Yasuo',
+					points: 225480,
+				}),
+			},
 		]).status,
 		'verified',
 	);
-	const detail = {
-		metadata: { matchId: 'KR_7482819248' },
-		info: { participants: [{ championName: 'Galio' }] },
-	};
+	// A participant row names the match; a page without it does not.
+	const row = { matchId: match.params.match_id, championName: 'Galio', kills: 7 };
 	assert.equal(
-		assessSearchResults(cases[94], [
-			{ url: 'https://lolesports.com/', content: JSON.stringify(detail) },
-		]).status,
+		assessSearchResults(match, [{ url: '', content: JSON.stringify(row) }]).status,
 		'verified',
 	);
 	assert.equal(
-		assessSearchResults(cases[94], [{ url: 'https://lolesports.com/', title: 'LoL Esports' }])
-			.status,
+		assessSearchResults(match, [{ url: 'https://lolesports.com/', title: 'LoL Esports' }]).status,
 		'mismatch',
 	);
 });
@@ -1253,6 +1275,9 @@ test('paper ordering and available metadata cannot stand in for missing filters'
 });
 
 test('unknown source rules and malformed structured evidence cannot certify a result', () => {
+	const match = cases.find(
+		({ tag, params }) => tag === 'gaming.esports' && params.type === 'match_detail',
+	);
 	const dataset = { tag: 'academic.dataset', params: { client_id: 'another.repository' } };
 	assert.equal(
 		assessSearchResults(dataset, [{ url: 'https://example.org/datasets/1' }]).status,
@@ -1270,13 +1295,9 @@ test('unknown source rules and malformed structured evidence cannot certify a re
 			'mismatch',
 		);
 	}
-	for (const participants of ['none', [{}], ['unknown']]) {
-		const content = JSON.stringify({
-			metadata: { matchId: 'KR_7482819248' },
-			info: { participants },
-		});
+	for (const content of ['not json', '[]', '{}', JSON.stringify({ matchId: 'KR_1' })]) {
 		assert.equal(
-			assessSearchResults(cases[94], [{ url: 'https://lolesports.com/', content }]).status,
+			assessSearchResults(match, [{ url: 'https://lolesports.com/', content }]).status,
 			'mismatch',
 		);
 	}

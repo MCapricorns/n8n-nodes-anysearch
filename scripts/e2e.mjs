@@ -398,7 +398,7 @@ function addStandardTests() {
 				{
 					query: 'Apple stock price',
 					tag: 'finance.quote',
-					params: { type: 'stock', symbol: 'AAPL' },
+					params: { market: 'US', type: 'stock', symbol: 'AAPL' },
 					max_results: 1,
 				},
 			]),
@@ -619,15 +619,19 @@ async function addCatalogTests(credential) {
 		const cases = JSON.parse(await fs.readFile(catalogFile, 'utf8'));
 		const dateAfter = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 		for (const entry of cases) {
-			if (path.resolve(catalogFile) === bundledCatalog && entry.tag === 'travel.flight') {
+			if (path.resolve(catalogFile) !== bundledCatalog) continue;
+			if (entry.tag === 'travel.flight') {
 				entry.params.date = dateAfter(30);
 				if (entry.params.return_date) entry.params.return_date = dateAfter(37);
 			}
+			// Flight status is kept for a limited time, so ask for yesterday.
+			if (entry.tag === 'travel.flight_status' && entry.params.date)
+				entry.params.date = dateAfter(-1);
 		}
 		const groupSize = singleCatalog ? 1 : 5;
 		for (let index = 0; index < cases.length; index += groupSize) {
 			const group = cases.slice(index, index + groupSize);
-			const records = group.map(({ expectedParams, ...input }) => ({ input, expectedParams }));
+			const records = group.map((input) => ({ input }));
 			catalogRecords.push(...records);
 			const { query, max_results, ...options } = records[0].input;
 			add(
@@ -842,6 +846,12 @@ async function runLiveWorkflows() {
 							}
 						}),
 					),
+				],
+				resultUrls: [
+					...new Set((item.json.results ?? []).map((result) => String(result.url).slice(0, 200))),
+				],
+				resultFields: [
+					...new Set((item.json.results ?? []).flatMap((result) => Object.keys(result))),
 				],
 			}));
 			test.check(items);

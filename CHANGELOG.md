@@ -2,69 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.1.11 (2026-11-27)
+## 1.2.0 (2026-11-27)
 
-- Reject a comma-separated domain value inside a Get Sub-Domains array before sending a request. Continue to support saved workflows that use a single comma-separated string.
-- Show retry guidance when AnySearch returns HTTP 403 for a temporary access restriction.
-- Verify the returned ticker and fiscal period in international fundamentals acceptance checks. Record conflicting evidence as a mismatch and mark results with missing identifying evidence as unverified.
+This release replaces the transitional builds 1.1.3 to 1.1.11.
 
-## 1.1.10 (2026-11-27)
+### Capability catalog
 
-- Reject IANA-reserved IPv6 literals in Extract, including deprecated site-local and IPv4-compatible addresses. Keep public IPv4, IPv6, and the global translation prefix available.
-- Reject a non-boolean Simplify value and wrong-type fundamental ticker fields before sending requests. Continue to supply the documented empty ticker placeholders for valid workflows.
-- Preserve HTTP status, business code, and request ID when a successful REST envelope contains malformed data. Share JSON parsing and response validation error handling across operations.
-- Add focused REST workflow and replay modes to the n8n runner. Record request IDs, outgoing bodies, and short response summaries while retaining only status and request ID for HTTP 402.
-- Mark comment-like Reddit records with only a parent thread URL as insufficient evidence of a comment permalink in acceptance reports.
-- Known upstream behavior observed during review includes intermittent Search HTTP 503, HTTP 502 for unknown discovery domains, and HTTP 422 for some public Extract targets. Some HTTP 200 responses returned a different DOI, source, or legal collection from the requested filter.
+- Sync the bundled capability catalog with `GET /v1/sub-domains`, reviewed on 2026-11-27: 17 domains, 40 capability tags, and 206 tag-specific fields, 25 of them required. `agriculture.fao` becomes `agriculture.stats` with a required `item`. `security.intel`, `security.noise`, and `security.scan` become `security.asset`, `security.malware`, and `security.threat_intel`. The catalog gains the tag `resource.video`, and `resource.image` gains `type`. `code.snippet` gains `regex`, `gaming.esports` gains `count`, and `gaming.store` gains `language` and `region`.
+- Read required flags and descriptions together. `market` is now required by `finance.quote`, `finance.fundamental`, `finance.macro`, and `finance.screen`. `academic.citation` needs `id` for every operation except a metadata keyword search, and `academic.paper` accepts a DOI lookup as a bare DOI, a `doi:` prefix, or an `http(s)://doi.org/` URL. A request that misses a required field stops in n8n with the field name instead of reaching AnySearch.
+- Reject fields and types that the catalog no longer defines: `cn_code`, `country`, the earlier citation and dataset fields, the flight `origin`, `destination`, and `type` fields, `type` in `travel.flight_status` and `environment.aqi`, and the `finance.news` types `flash` and `announcement`.
+- Validate the current definitions: finance news types and long-form sources; calendar types, date types, event types, and exchanges; fundamental report bases, selections, metric IDs, and filing types; macro periods, measures, and tenors; quote operations, frequencies, adjustments, and NAV types; screen ranges, sorts, and snapshot dates; citation operations with the identifier that each one supports; DataCite resource types; agriculture domains and years; air quality locations; esports regions, tiers, divisions, queues, and Riot IDs; and threat-intel subject types.
+- Enforce the conditions stated in field descriptions: market and type support, symbols for stock news, transcripts, and security-level quotes, report periods for report-end statements and transcripts, event types and exchanges for corporate actions and trading calendars, and the flight return date.
+- Follow the documented DOI, ORCID, ISBN, ISSN, and OMID identifier standards, including check digits.
+- Send parameters exactly as entered. The node adds no defaults and no longer supplies an empty flight status `departure`, an empty unused fundamental ticker, or the 90-day earnings calendar period.
+- Drop limits that the catalog does not state: the CFR title range, publication year order, and effective date order.
+- Compare the bundled catalog with the live directory on every push.
 
-## 1.1.9 (2026-11-27)
+### Search and Batch Search
 
-- Reject additional non-public IPv4 and IPv6 addresses in Extract before sending a request. Keep globally reachable exceptions available.
-- Preserve Unicode when reading n8n CLI output and verify the HTTP method and path in acceptance tests.
-- Improve acceptance checks for paper metadata and sorting, ORCID resolution, ranked queues, and numeric U.S. legislation filters.
+- Apply the same catalog validation in Search and Batch Search, and keep a single node version, `typeVersion: 1`.
+- Require a Batch Search list of 1 to 5 query objects and validate each REST request before sending it. Reject unsupported `zone` and `format` values, and omit empty tag parameters.
+- Repair the duplicated Reddit origin in comment URLs, and correct the finance quote parameter example in the node editor.
 
-## 1.1.8 (2026-11-27)
+### Errors
 
-- Validate ISBN prefixes, ISBN and ISSN check digits, and OMID entity codes and formats in citation lookups.
-- Enforce the 1–50 range for numeric title filters when the CFR collection is selected.
-- Enforce the DNS length limit for bare domain indicators after IDNA conversion.
+- Route errors with their request ID, HTTP status, and batch index to the dedicated error output.
+- Preserve the HTTP status, request ID, business code, and error code in n8n error output, also when a successful envelope contains malformed data. HTTP 402 keeps only the status and request ID.
+- Show retry guidance for a temporary HTTP 403 access restriction, and name a missing catalog field that AnySearch reports with HTTP 400.
 
-## 1.1.7 (2026-11-27)
+### Extract and discovery
 
-- Require a Batch Search query list and validate each REST request object before sending it. Omit empty tag parameters and reject unsupported region and response format values.
-- Enforce the earnings calendar period, apply esports filters to the documented query types, and accept the supported finance ticker placeholders, dataset years, and CFR title numbers.
-- Use the published citation types and sort directions. Leave provider-specific date range interpretation to AnySearch and accept internationalized domains in indicator lookups.
-- Require result evidence for additional filters in citation, dataset, legal, finance, social media, and patent acceptance cases.
+- Reject embedded credentials and non-public IPv4 and IPv6 literal addresses in Extract before sending a request. Keep globally reachable addresses available.
+- Reject a comma-separated domain value inside a Get Sub-Domains array, and continue to support saved workflows that use a single comma-separated string.
 
-## 1.1.6 (2026-11-27)
+### Verification
 
-- Validate individual threat-intelligence indicators and the three-letter shape of flight currency codes in Search and Batch Search.
-- Check calendar values in recognized energy and patent date formats. Reject inverted electricity and round-trip flight dates, and validate A-share tickers in operations that use them.
-- Preserve only the HTTP status and request ID from quota responses in acceptance logs. Verify outgoing request bodies separately.
-- Compare search results and metadata with the captured response. Distinguish confirmed mismatches, missing evidence and nonempty results without a source-specific check.
-
-## 1.1.5 (2026-11-27)
-
-- Keep a single AnySearch node version and apply the same documented parameter validation and defaults in Search and Batch Search.
-- Verify required fields, supported tags and documented parameter formats, choices and conditional constraints against the reviewed AnySearch capability catalog.
-- Follow the documented DOI, ORCID and ISO identifier standards, apply submission limits before sending requests, and keep malformed batch queries out of error details.
-- Preserve HTTP status, request ID, business code and optional error code in n8n error output. Limit HTTP 402 diagnostics to status and request ID.
-- Verify outgoing requests and error diagnostics in real n8n. Run isolated fault tests without an AnySearch account.
-
-## 1.1.4 (2026-11-27)
-
-- Enforce the earnings calendar period, the unused fundamental ticker and esports parameter formats and choices in Search and Batch Search.
-- Route errors with request IDs, HTTP status and batch indexes to the dedicated error output on n8n 2.17.3.
-- Verify source links, document types and exact record identities in acceptance runs. Report empty results and upstream mismatches with their request IDs.
-- Check every reviewed capability field through both search operations and compare field definitions with live discovery in CI.
-
-## 1.1.3 (2026-11-26)
-
-- Supply the documented airport and ticker placeholders for flight status, company overviews and A-share fundamentals. Default earnings calendars to 90 days.
-- Validate conditional esports, crypto quote and single-citation parameters in Search and Batch Search. Report missing catalog field names on HTTP 400 while preserving the request ID and keeping upstream bodies private.
-- Repair the duplicated Reddit origin in comment URLs and correct the finance quote parameter example in the node editor.
-- Add live n8n acceptance checks for outgoing requests, returned data, local validation and batch error isolation.
-- Forward explicit JSON format, validate complete capability tags, and verify all documented search fields against the live catalog. Reuse the same domain loader for the operation and the picker.
+- Run lint, unit tests, and the live catalog comparison on every push.
+- Check the node in a real n8n instance: transport faults without an account, the authenticated workflow with an AI Agent, and a capability matrix of 200 requests that covers every catalog field and tag. The matrix compares each outgoing HTTP body with the entered request and checks returned records against the requested filters. 68 further requests with missing, malformed, or removed values are rejected by the node before any HTTP request. Evidence records request IDs, outgoing bodies, returned URLs and fields, and short response summaries; HTTP 402 keeps only the status and request ID.
+- Known upstream behavior observed on 2026-11-27 with n8n 2.49.8 and Node.js 26.13.1:
+  - Availability varies by provider and between runs. In the last matrix run, 32 of 199 requests returned HTTP 503 and two responses were cut off. HTTP 502 occurs for unknown discovery domains and HTTP 422 for some public Extract targets.
+  - `agriculture.stats` returns HTTP 400 for a `partner` with an `element` when the FAOSTAT detailed trade matrix has no row for the combination, for example `partner: China`. `China, mainland` returns a record.
+  - `gaming.esports` returns HTTP 400 when `player` has no `game_name` or `match_detail` has no `match_id`, although the catalog does not require them. The example match ID `KR_7482819248` does not exist and is answered with a `no_data` record.
+  - `finance.news` type `long_form` returns the provider text without a URL. A source without articles answers with a coverage status.
+  - `environment.aqi` returned HTTP 400 for two `lat,lng` pairs that a semicolon separates, while the same pairs separated by `and` are accepted.
+  - The `linkedin_people`, `linkedin_jobs`, `linkedin_company`, and `linkedin_posts` types of `social_media.social_media` returned general web pages instead of LinkedIn pages.
+  - `legal.legislation` returned congress.gov bills for the `CFR`, `FR`, and `USCODE` collections and for Canadian rules, and `ip.global` returned patents of other assignees for an `applicant` filter.
+  - An `academic.person` lookup can return `AMBIGUOUS_IDENTITY`, and `reddit_comment` can return a parent thread instead of a comment link.
 
 ## 1.1.2 (2026-11-05)
 
