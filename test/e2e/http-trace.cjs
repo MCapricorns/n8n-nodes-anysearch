@@ -2,6 +2,8 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
+const { searchOutputDigest } = require('./search-output-digest.cjs');
+const redditOrigin = 'https://www.reddit.com';
 const maxBodyBytes = 4 * 1024 * 1024;
 
 function safeRequestId(value) {
@@ -63,13 +65,32 @@ for (const protocol of ['http', 'https']) {
 					const body = readResponse(bodyChunks, encoding);
 					record.request_id = safeRequestId(body.request_id) ?? record.request_id;
 					if (record.status !== 402) {
-						record.code = body.code;
-						record.error_code = body.error_code;
+						if (Number.isInteger(body.code)) record.code = body.code;
+						if (
+							typeof body.error_code === 'string' &&
+							/^(?!as_sk_)[a-z][a-z\d_-]{0,63}$/i.test(body.error_code)
+						)
+							record.error_code = body.error_code;
 						record.resultCount = body.data?.results?.length;
 						record.contentLength =
 							typeof body.data?.content === 'string'
 								? Array.from(body.data.content).length
 								: undefined;
+						if (
+							record.status === 200 &&
+							body.code === 0 &&
+							record.path === '/v1/search' &&
+							Array.isArray(body.data?.results)
+						) {
+							// The node repairs a duplicated Reddit origin when returning results.
+							const results = body.data.results.map((row) =>
+								typeof row?.url === 'string' &&
+								row.url.startsWith(redditOrigin + redditOrigin + '/')
+									? { ...row, url: row.url.slice(redditOrigin.length) }
+									: row,
+							);
+							record.searchOutputDigest = searchOutputDigest(results, body.data.metadata);
+						}
 						if (body.code === 0)
 							record.responseDigest = crypto
 								.createHash('sha256')
@@ -77,7 +98,12 @@ for (const protocol of ['http', 'https']) {
 								.digest('hex');
 					}
 				} catch {}
-				fs.appendFileSync(process.env.ANYSEARCH_E2E_TRACE, JSON.stringify(record) + '\n');
+				const evidence =
+					record.status === 402 ? { status: 402, request_id: record.request_id } : record;
+				fs.appendFileSync(process.env.ANYSEARCH_E2E_TRACE, JSON.stringify(evidence) + '\n');
+				// The parent verifies the actual outgoing body in memory, including quota refusals.
+				if (process.env.ANYSEARCH_E2E_TRACE_PIPE === '1')
+					fs.writeFileSync(3, JSON.stringify(record) + '\n');
 			});
 		});
 		return request;

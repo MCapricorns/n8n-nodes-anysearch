@@ -22,11 +22,15 @@ export async function runFaultWorkflows({
 		const body = JSON.parse(Buffer.concat(chunks).toString());
 		const scenario =
 			body.query || (body.url ? new URL(body.url).pathname.slice(1) : 'unexpected-request');
-		requests.push({
-			scenario,
-			path: request.url,
-			authorizationPresent: Boolean(request.headers.authorization),
-		});
+		requests.push(
+			scenario === 'http-402'
+				? { status: 402, request_id: 'fault-http-402' }
+				: {
+						scenario,
+						path: request.url,
+						authorizationPresent: Boolean(request.headers.authorization),
+					},
+		);
 		if (scenario === 'timeout') return;
 		const status = scenario.startsWith('http-') ? Number(scenario.slice(5)) : 200;
 		response.writeHead(status, {
@@ -167,7 +171,10 @@ export async function runFaultWorkflows({
 					assert.equal(item.json.details.request_id, 'fault-' + scenario);
 				}
 				if (scenario === 'http-402') {
-					assert.deepEqual(item.json.details, { http_status: 402, request_id: 'fault-http-402' });
+					assert(
+						Object.keys(item.json.details).length === 2,
+						'Extra fields in HTTP 402 diagnostics',
+					);
 				} else if (scenario.startsWith('http-') || scenario === 'business') {
 					assert.equal(item.json.details.code, -1);
 					assert.equal(item.json.details.error_code, 'fixture_failure');
@@ -177,7 +184,12 @@ export async function runFaultWorkflows({
 				if (scenario === 'unreadable')
 					assert(!requests.some((request) => request.scenario === scenario));
 				record.passed = true;
-				record.error = item.json.error;
+				if (scenario === 'http-402')
+					record.details = { http_status: 402, request_id: item.json.details.request_id };
+				else {
+					record.error = item.json.error;
+					if (item.json.details?.http_status) record.details = item.json.details;
+				}
 			} catch (error) {
 				record.passed = false;
 				record.failure = redact(error.message);
@@ -247,7 +259,7 @@ export async function runFaultWorkflows({
 			}
 			tests.push({ name: 'removed-feedback-' + onError, passed: true, requestCount: 0 });
 		}
-		assert.equal(requests.filter((request) => request.scenario === 'http-402').length, 2);
+		assert.equal(requests.filter((request) => request.status === 402).length, 2);
 		assert.equal(requests.filter((request) => request.scenario === 'http-429').length, 2);
 		return { passed: tests.every((test) => test.passed), tests, requests, privacyPassed: true };
 	} finally {

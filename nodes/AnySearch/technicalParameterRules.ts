@@ -6,12 +6,29 @@ const flightCurrency = format(/^[a-z]{3}$/i, 'a three-letter currency code such 
 const count = integer(0);
 const flightDate = dateValue('DD/MM/YYYY', 'YYYY-MM-DD');
 
+function flightDateKey(value: string): string {
+	return value.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, '$3-$2-$1');
+}
+
 const dnsName =
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/i;
 const urlScheme = /^[a-z][a-z\d+.-]*:\/\//i;
 const ipv6Candidate = /^[a-f\d.]*:[a-f\d.]*:[a-f\d:.]*$/i;
-// Intel does not enumerate hash algorithms. Preserve encoded digests and algorithm prefixes.
-const intelHash = /^[a-z\d+/_-]+(?::[a-z\d+/_-]+)*={0,2}$/i;
+
+function isIntelHash(value: string): boolean {
+	// Intel leaves hash algorithms open, including digests with an algorithm prefix.
+	if (!/^[a-z\d+/_-]+(?::[a-z\d+/_-]+)*={0,2}$/i.test(value)) return false;
+	const digest = value.slice(value.lastIndexOf(':') + 1);
+	if (urlScheme.test(value)) {
+		// A prefixed Base64 digest may start with "//". Keep special URL schemes on the URL path.
+		if (/^(?:ftp|file|https?|wss?):/i.test(value)) return false;
+		const encoded = Buffer.from(digest, 'base64').toString('base64');
+		return digest === encoded || digest === encoded.replace(/=+$/, '');
+	}
+	if (/[a-z\d]/i.test(digest)) return true;
+	// Symbols alone can encode bytes in Base64 or Base64url only in complete quartets.
+	return /^(?:(?:[+/]{4})+|(?:[-_]{4})+)$/.test(digest);
+}
 
 function isIPv4(value: string): boolean {
 	const octets = value.split('.');
@@ -39,13 +56,12 @@ function isNetworkIndicator(value: string): boolean {
 	}
 }
 
-function indicator(hash: RegExp, expected: string): FieldRule {
+function indicator(isHash: (value: string) => boolean, expected: string): FieldRule {
 	return {
 		matches: (value) =>
 			typeof value === 'string' &&
 			!/[\s\p{Cc}]/u.test(value) &&
-			((!urlScheme.test(value) && !ipv6Candidate.test(value) && hash.test(value)) ||
-				isNetworkIndicator(value)),
+			((!ipv6Candidate.test(value) && isHash(value)) || isNetworkIndicator(value)),
 		expected,
 	};
 }
@@ -113,7 +129,7 @@ const vulnerabilityValue: FieldRule = {
 
 export const technicalParameterRules: CapabilityRuleMap = {
 	'security.intel': {
-		fields: { ioc: indicator(intelHash, 'a single domain, IP address, URL, or file hash') },
+		fields: { ioc: indicator(isIntelHash, 'a single domain, IP address, URL, or file hash') },
 	},
 	'security.noise': {
 		fields: {
@@ -126,7 +142,7 @@ export const technicalParameterRules: CapabilityRuleMap = {
 	'security.scan': {
 		fields: {
 			ioc: indicator(
-				/^(?:[a-f\d]{32}|[a-f\d]{40}|[a-f\d]{64})$/i,
+				(value) => /^(?:[a-f\d]{32}|[a-f\d]{40}|[a-f\d]{64})$/i.test(value),
 				'a domain, IP address, URL, or MD5, SHA1, or SHA256 hash',
 			),
 		},
@@ -155,6 +171,17 @@ export const technicalParameterRules: CapabilityRuleMap = {
 			infants: count,
 			return_date: flightDate,
 			type: choice('FlightSearch'),
+		},
+		check: ({ date, return_date }) => {
+			if (
+				typeof date === 'string' &&
+				typeof return_date === 'string' &&
+				return_date &&
+				flightDateKey(return_date) < flightDateKey(date)
+			) {
+				return 'return_date must be on or after date.';
+			}
+			return undefined;
 		},
 	},
 	'travel.flight_status': {

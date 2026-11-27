@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.6 (2026-11-27)
+
+- Validate individual threat-intelligence indicators and the three-letter shape of flight currency codes in Search and Batch Search.
+- Check calendar values in recognized energy and patent date formats. Reject inverted electricity and round-trip flight dates, and validate A-share tickers in operations that use them.
+- Preserve only the HTTP status and request ID from quota responses in acceptance logs. Verify outgoing request bodies separately.
+- Compare search results and metadata with the captured response. Distinguish confirmed mismatches, missing evidence and nonempty results without a source-specific check.
+
 ## 1.1.5 (2026-11-27)
 
 - Keep a single AnySearch node version and apply the same documented parameter validation and defaults in Search and Batch Search.

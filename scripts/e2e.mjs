@@ -64,9 +64,14 @@ function invoke(args, extraEnv = {}, timeoutMs = 300000) {
 			cwd: work,
 			env: { ...env, ...extraEnv },
 			windowsHide: true,
+			stdio: extraEnv.ANYSEARCH_E2E_TRACE_PIPE ? ['ignore', 'pipe', 'pipe', 'pipe'] : 'pipe',
 		});
 		let stdout = '',
-			stderr = '';
+			stderr = '',
+			trace = '';
+		child.stdio[3]?.setEncoding('utf8').on('data', (chunk) => {
+			trace += chunk;
+		});
 		child.stdout.on('data', (data) => {
 			stdout += data;
 		});
@@ -83,7 +88,7 @@ function invoke(args, extraEnv = {}, timeoutMs = 300000) {
 		});
 		child.on('close', (code) => {
 			clearTimeout(timer);
-			resolve({ code, stdout, stderr });
+			resolve({ code, stdout, stderr, trace });
 		});
 	});
 }
@@ -170,7 +175,7 @@ function addStandardTests() {
 		assert.equal(items.length, 1);
 		assert(items[0].json.details.request_id);
 		assert.match(items[0].json.error, /quota/i);
-		assert.doesNotMatch(JSON.stringify(items), /as_sk_|api_key=|password=/i);
+		assert(!/as_sk_|api_key=|password=/i.test(JSON.stringify(items)), 'Sensitive quota output');
 	}
 	add(
 		'Authenticated Search',
@@ -621,6 +626,7 @@ async function runLiveWorkflows() {
 		{
 			NODE_OPTIONS: '--require=' + path.join(root, 'test/e2e/http-trace.cjs'),
 			ANYSEARCH_E2E_TRACE: traceFile,
+			ANYSEARCH_E2E_TRACE_PIPE: '1',
 		},
 		300000 + (singleCatalog ? catalogRecords.length * 60000 : 0),
 	);
@@ -634,11 +640,10 @@ async function runLiveWorkflows() {
 	}
 	if (data.data.resultData.error) {
 		const error = data.data.resultData.error;
-		summary.engineError = {
-			name: error.name,
-			message: redact(error.message),
-			node: error.node?.name,
-		};
+		summary.engineError =
+			error.context?.http_status === 402
+				? { http_status: 402, request_id: error.context.request_id }
+				: { name: error.name, message: redact(error.message), node: error.node?.name };
 	}
 	assert.equal(data.status, 'success', 'n8n workflow did not succeed');
 	assert.equal(data.finished, true);
@@ -649,6 +654,7 @@ async function runLiveWorkflows() {
 	summary.workflowId = workflow.id;
 	summary.executionStatus = data.status;
 	const runData = data.data.resultData.runData;
+	const observations = [];
 	function verify(name, check) {
 		const record = { name, passed: true };
 		try {
@@ -657,8 +663,17 @@ async function runLiveWorkflows() {
 			record.passed = false;
 			record.failure = redact(error.message);
 		}
-		summary.tests.push(record);
-		console.log(JSON.stringify(record));
+		observations.push(record);
+		const evidence = record.results
+			? {
+					...record,
+					results: record.results.map((item) =>
+						item.http_status === 402 ? { http_status: 402, request_id: item.request_id } : item,
+					),
+				}
+			: record;
+		summary.tests.push(evidence);
+		console.log(JSON.stringify(evidence));
 	}
 	for (const test of tests) {
 		verify(test.name, (record) => {
@@ -690,13 +705,17 @@ async function runLiveWorkflows() {
 			test.check(items);
 		});
 	}
-	summary.requests = (await fs.readFile(traceFile, 'utf8'))
-		.split('\n')
-		.filter(Boolean)
-		.map((line) => JSON.parse(line));
-	assert(summary.requests.length > 0, 'No real AnySearch HTTP requests observed');
+	const parseTrace = (source) =>
+		source
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => JSON.parse(line));
+	const wireRequests = parseTrace(execution.trace);
+	summary.requests = parseTrace(await fs.readFile(traceFile, 'utf8'));
+	assert.equal(wireRequests.length, summary.requests.length, 'Incomplete HTTP capture');
+	assert(wireRequests.length > 0, 'No real AnySearch HTTP requests observed');
 	assert(
-		summary.requests.every(
+		wireRequests.every(
 			(request) =>
 				/^\/v1\/(search|extract|domains|sub-domains)(?:\?|$)/.test(request.path) &&
 				request.body?.jsonrpc === undefined,
@@ -704,37 +723,37 @@ async function runLiveWorkflows() {
 		'AnySearch operations must use the REST API',
 	);
 	assert(
-		summary.requests.every((request) => !request.emptyBearer),
+		wireRequests.every((request) => !request.emptyBearer),
 		'Empty Bearer header observed',
 	);
 	verify('REST error diagnostics', () => {
-		const requests = new Map(summary.requests.map((request) => [request.request_id, request]));
-		for (const { results = [] } of summary.tests) {
+		for (const { results = [] } of observations) {
 			for (const { request_id, http_status, code, error_code } of results) {
+				if (http_status === 402)
+					assert(request_id, 'Cannot correlate HTTP 402 without a request ID');
 				if (!request_id || http_status === undefined) continue;
-				const wire = requests.get(request_id);
-				assert.equal(http_status, wire?.status, 'Wire and node HTTP statuses differ');
-				assert.equal(
-					code,
-					http_status === 402 ? undefined : wire.code,
-					'Wire and node codes differ',
-				);
-				assert.equal(
-					error_code,
-					http_status === 402 ? undefined : wire.error_code,
-					'Wire and node error codes differ',
-				);
+				const matches = wireRequests.filter((request) => request.request_id === request_id);
+				assert.equal(matches.length, 1, 'Missing or ambiguous HTTP request ID: ' + request_id);
+				const [wire] = matches;
+				assert.equal(http_status, wire.status, 'Wire and node HTTP statuses differ');
+				if (http_status === 402) {
+					assert(
+						code === undefined && error_code === undefined,
+						'Extra fields in HTTP 402 diagnostics',
+					);
+				} else {
+					assert.equal(code, wire.code, 'Wire and node codes differ');
+					assert.equal(error_code, wire.error_code, 'Wire and node error codes differ');
+				}
 			}
 		}
 	});
 
-	verify('Capability HTTP requests', () =>
-		checkCapabilityRequests(summary.requests, summary.tests),
-	);
+	verify('Capability HTTP requests', () => checkCapabilityRequests(wireRequests, observations));
 	if (catalogFile)
 		verify('Catalog requests and returned results', () => {
 			const domains = runData.Subdomains.at(-1).data.main[0].map((item) => item.json);
-			summary.catalogCoverage = catalogRequestReport(catalogRecords, summary.requests, domains);
+			summary.catalogCoverage = catalogRequestReport(catalogRecords, wireRequests, domains);
 			checkCatalogRequests(summary.catalogCoverage);
 			if (path.resolve(catalogFile) === path.join(root, 'test/e2e/search-cases.json')) {
 				const listed = runData.Domains.at(-1).data.main[0].map((item) => item.json.domain);
@@ -753,7 +772,7 @@ async function runLiveWorkflows() {
 		});
 	if (!capabilityOnly) {
 		assert(
-			!summary.requests.some(
+			!wireRequests.some(
 				({ body }) =>
 					body?.query === '' ||
 					body?.url === 'example.com' ||
@@ -761,11 +780,9 @@ async function runLiveWorkflows() {
 			),
 			'Locally invalid query or URL reached AnySearch',
 		);
-		const authenticatedId = summary.tests.find((test) => test.name === 'Authenticated Search')
+		const authenticatedId = observations.find((test) => test.name === 'Authenticated Search')
 			?.results?.[0]?.request_id;
-		const authenticated = summary.requests.find(
-			(request) => request.request_id === authenticatedId,
-		);
+		const authenticated = wireRequests.find((request) => request.request_id === authenticatedId);
 		assert.equal(
 			authenticated?.authorizationPresent,
 			true,
@@ -773,14 +790,14 @@ async function runLiveWorkflows() {
 		);
 		assert.equal(authenticated.status, 200);
 		for (const query of ['n8n community nodes', 'n8n optional credentials documentation']) {
-			const requests = summary.requests.filter((request) => request.body?.query === query);
+			const requests = wireRequests.filter((request) => request.body?.query === query);
 			assert.equal(requests.length, 1);
 			assert.equal(requests[0].authorizationPresent, false, 'Anonymous request sent Authorization');
 		}
-		const invalid = summary.requests.filter((request) => request.body?.query === 'n8n');
+		const invalid = wireRequests.filter((request) => request.body?.query === 'n8n');
 		assert.equal(invalid.length, 1);
 		assert.equal(invalid[0].fixtureBearer, true);
-		const events = summary.requests
+		const events = wireRequests
 			.flatMap((request) => [
 				[request.startedAt, 1],
 				[request.finishedAt, -1],

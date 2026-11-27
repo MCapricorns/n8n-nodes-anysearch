@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 
 // These checks qualify hits in the acceptance suite. The search node preserves API results.
+class MissingEvidence extends Error {}
+
+function requireEvidence(condition, reason) {
+	if (!condition) throw new MissingEvidence(reason);
+}
+
 const flashSources = {
 	sina: ['sina.com.cn', 'sina.cn'],
 	wallstreetcn: ['wallstreetcn.com'],
@@ -93,7 +99,7 @@ function matchesCollection(url, collection) {
 				/^\/bill\/\d+[a-z]+-congress\/[\w-]+\/\d+(?:\/|$)/.test(path)
 			);
 		default:
-			return false;
+			return undefined;
 	}
 }
 
@@ -157,15 +163,13 @@ function matchesDoi(result, url, id) {
 		contentRecord(result.content)?.doi,
 		paperHeader(result.content).doi,
 	].filter((value) => typeof value === 'string' && value.trim());
-	return (
-		identifiers.length > 0 &&
-		identifiers.every(
-			(value) =>
-				value
-					.trim()
-					.replace(/^(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)/i, '')
-					.toLowerCase() === id.toLowerCase(),
-		)
+	if (!identifiers.length) return undefined;
+	return identifiers.every(
+		(value) =>
+			value
+				.trim()
+				.replace(/^(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)/i, '')
+				.toLowerCase() === id.toLowerCase(),
 	);
 }
 
@@ -201,13 +205,26 @@ function contentRecord(content) {
 function matchesGame(result, url, id) {
 	const record = contentRecord(result.content);
 	const linkId = matchIdFromUrl(url);
-	if (url && linkId !== id) return false;
+	if (linkId && linkId !== id) return false;
 	if (record?.metadata?.matchId !== undefined && record.metadata.matchId !== id) return false;
 	if (record?.info?.gameId !== undefined && String(record.info.gameId) !== id.split('_')[1])
 		return false;
-	return (
-		linkId === id || (record?.metadata?.matchId === id && record.info?.participants?.length > 0)
-	);
+	const participants = record?.info?.participants;
+	if (participants !== undefined) {
+		if (!Array.isArray(participants) || !participants.length) return false;
+		if (
+			!participants.every(
+				(p) =>
+					p &&
+					typeof p === 'object' &&
+					['participantId', 'puuid', 'riotIdGameName', 'championId', 'championName', 'kills'].some(
+						(field) => p[field] !== undefined && p[field] !== null,
+					),
+			)
+		)
+			return false;
+	}
+	return linkId === id || (record?.metadata?.matchId === id && participants !== undefined);
 }
 
 function checkLeaderboard(result, url, params) {
@@ -216,8 +233,11 @@ function checkLeaderboard(result, url, params) {
 	const region =
 		fromHost(url, ['op.gg', 'u.gg', 'leagueofgraphs.com']) &&
 		/\/(?:summoners?|rankings)\/([^/]+)\//i.exec(url.pathname)?.[1].toLowerCase();
+	const expectedRegion = params.region.toLowerCase();
+	const recordRegion = typeof row.region === 'string' ? row.region.toLowerCase() : row.region;
 	assert(
-		region === params.region || (!url && row.region?.toLowerCase() === params.region),
+		(region === expectedRegion || (!url && recordRegion === expectedRegion)) &&
+			(recordRegion == null || recordRegion === expectedRegion),
 		'Expected a leaderboard entry for region ' + params.region,
 	);
 	assert(
@@ -239,12 +259,13 @@ function checkLeaderboard(result, url, params) {
 			'Expected leaderboard tier ' + params.tier,
 		);
 	}
-	if (params.division)
-		assert.equal(
-			row.rank ?? row.division,
-			params.division,
+	if (params.division) {
+		const divisions = [row.rank, row.division].filter((value) => value != null);
+		assert(
+			divisions.length && divisions.every((value) => value === params.division),
 			'Expected leaderboard division ' + params.division,
 		);
+	}
 	if (params.queue) {
 		const namedQueues = { 420: 'RANKED_SOLO_5X5', 440: 'RANKED_FLEX_SR' };
 		const queueInPath = /\/(RANKED_SOLO_5x5|RANKED_FLEX_SR)(?:\/|$)/i.exec(
@@ -259,10 +280,11 @@ function checkLeaderboard(result, url, params) {
 			url?.searchParams.get('queueType'),
 			url?.searchParams.get('queueId'),
 		].filter((value) => value !== undefined && value !== null && value !== '');
-		assert(queues.length, 'Missing leaderboard queue ' + params.queue);
+		requireEvidence(queues.length, 'Missing leaderboard queue ' + params.queue);
 		assert(
 			queues.every(
 				(value) =>
+					(typeof value === 'string' || typeof value === 'number') &&
 					(namedQueues[value] ?? String(value).toUpperCase()) === params.queue.toUpperCase(),
 			),
 			'Unexpected leaderboard queue',
@@ -445,10 +467,14 @@ function paperDetails(result, url) {
 }
 
 function checkPaper(result, url, params) {
-	let checked = false;
+	const filters = Object.keys(params).filter((key) => key !== 'sort');
+	const missing = new Set(filters);
 	if (params.doi) {
-		assert(matchesDoi(result, url, params.doi), 'Expected paper DOI ' + params.doi);
-		checked = true;
+		const match = matchesDoi(result, url, params.doi);
+		if (match !== undefined) {
+			assert(match, 'Expected paper DOI ' + params.doi);
+			missing.delete('doi');
+		}
 	}
 	const paper = paperDetails(result, url);
 	if (params.year && paper.years.length) {
@@ -463,23 +489,23 @@ function checkPaper(result, url, params) {
 				', received ' +
 				[...new Set(paper.years)].join(', '),
 		);
-		checked = true;
+		missing.delete('year');
 	}
 	if (params.language && typeof paper.language === 'string') {
 		const observed = paper.language.toLowerCase();
 		const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(params.language);
 		assert(
-			observed.split('-')[0] === params.language || observed === name.toLowerCase(),
+			observed.split('-')[0] === params.language.toLowerCase() || observed === name.toLowerCase(),
 			'Unexpected paper language ' + observed,
 		);
-		checked = true;
+		missing.delete('language');
 	}
 	if (params.min_citations !== undefined && paper.citations !== undefined) {
 		assert(
 			paper.citations >= Number(params.min_citations),
 			'Paper has fewer than ' + params.min_citations + ' citations',
 		);
-		checked = true;
+		missing.delete('min_citations');
 	}
 	if (
 		params.open_access !== undefined &&
@@ -490,7 +516,7 @@ function checkPaper(result, url, params) {
 			String(params.open_access) === 'true',
 			'Unexpected paper open-access status',
 		);
-		checked = true;
+		missing.delete('open_access');
 	}
 	const normalized = (value) => String(value).trim().toLowerCase();
 	function matchesAny(requested, actual) {
@@ -499,14 +525,14 @@ function checkPaper(result, url, params) {
 	}
 	if (params.authors && paper.authors.length) {
 		assert(matchesAny(params.authors, paper.authors), 'Unexpected paper authors');
-		checked = true;
+		missing.delete('authors');
 	}
 	if (params.venue && typeof paper.venue === 'string') {
 		const venueNames = [paper.venue];
 		if (normalized(paper.venue) === 'neural information processing systems')
 			venueNames.push('Advances in Neural Information Processing Systems');
 		assert(matchesAny(params.venue, venueNames), 'Unexpected paper venue ' + paper.venue);
-		checked = true;
+		missing.delete('venue');
 	}
 	if (params.publication_type && typeof paper.type === 'string') {
 		const type = normalized(paper.type).replace(/[\s-]+/g, '_');
@@ -522,9 +548,11 @@ function checkPaper(result, url, params) {
 			matchesAny(params.publication_type, [aliases[type] ?? type]),
 			'Unexpected paper publication type ' + type,
 		);
-		checked = true;
+		missing.delete('publication_type');
 	}
-	return checked;
+	// Test every identifiable field before reporting the missing ones.
+	requireEvidence(!missing.has('doi'), 'No record DOI available to verify ' + params.doi);
+	return filters.length ? missing.size === 0 : undefined;
 }
 
 function checkPaperOrder(sort, results) {
@@ -598,7 +626,7 @@ function checkEarnings(result, params) {
 }
 
 function checkFinancialFlash(result, url, source) {
-	assert(Object.hasOwn(flashSources, source), 'Missing acceptance rule for news_src=' + source);
+	if (!Object.hasOwn(flashSources, source)) return undefined;
 	const error = 'Expected a financial flash from ' + source;
 	assert(fromHost(url, flashSources[source]), error);
 	const path = url.pathname;
@@ -720,27 +748,34 @@ function matchesMedia(url, result, type) {
 function matchesHotList(url, result, type) {
 	const isWeibo = type === 'weibo_hot';
 	const path = url.pathname;
+	const row = contentRecord(result.content) ?? result;
+	const labels = [row.type, row.source, row.list_type].filter((v) =>
+		['weibo_hot', 'zhihu_hot'].includes(v),
+	);
+	if (labels.some((v) => v !== type)) return false;
 	if (isWeibo && /^\/(?:top\/summary|hot\/(?:search|weibo))\/?$/i.test(path)) return true;
 	if (!isWeibo && /^\/(?:hot|api\/v3\/feed\/topstory\/hot-lists\/total)\/?$/i.test(path))
 		return true;
-	if (isWeibo && /^\/weibo\/?$/i.test(path))
-		return (
-			Boolean(url.searchParams.get('q')) && /^[1-9]\d*$/.test(url.searchParams.get('band_rank'))
-		);
-	if (!(isWeibo ? weiboPost : zhihuPost).test(path)) return false;
-	const row = contentRecord(result.content) ?? result;
-	const rank =
-		row.hot_rank ??
-		row.hotRank ??
-		(row.type === type || row.list_type === 'hot' ? row.rank : undefined);
-	return /^[1-9]\d*$/.test(rank);
+	const searchEntry = isWeibo && /^\/weibo\/?$/i.test(path) && Boolean(url.searchParams.get('q'));
+	if (searchEntry && /^[1-9]\d*$/.test(url.searchParams.get('band_rank'))) return true;
+	if (!searchEntry && !(isWeibo ? weiboPost : zhihuPost).test(path)) return false;
+	const fromList = row.type === type || row.source === type || row.list_type === 'hot';
+	const rank = row.hot_rank ?? row.hotRank ?? (fromList ? (row.rank ?? row.position) : undefined);
+	requireEvidence(rank !== undefined, 'No hot-list rank or list attribution for ' + type);
+	return (
+		(typeof rank === 'number' && Number.isSafeInteger(rank) && rank > 0) ||
+		(typeof rank === 'string' && /^[1-9]\d*$/.test(rank))
+	);
 }
 
 function matchesOrcid(result, url, expected) {
 	const record = contentRecord(result.content) ?? {};
 	const status =
 		result.status ?? record.status ?? /^status:\s*([\w-]+)/i.exec(result.content ?? '')?.[1];
-	if (status && /ambiguous|unresolved|not[_ -]found|multiple/i.test(status)) return false;
+	requireEvidence(
+		!(status && /ambiguous|unresolved|not[_ -]found|multiple/i.test(status)),
+		'ORCID resolution returned ' + status + ' without selecting an author',
+	);
 	const normalize = (id) =>
 		String(id)
 			.trim()
@@ -753,7 +788,8 @@ function matchesOrcid(result, url, expected) {
 		if (!id) return false;
 		ids.push(normalize(id));
 	}
-	return ids.length > 0 && ids.every((id) => id === normalize(expected));
+	requireEvidence(ids.length, 'No resolved author ORCID available to verify ' + expected);
+	return ids.every((id) => id === normalize(expected));
 }
 
 const datasetSources = {
@@ -780,10 +816,7 @@ function checkSelectedResult(tag, params, result) {
 	if (tag === 'finance.news' && params.type === 'flash')
 		return checkFinancialFlash(result, url, params.news_src ?? 'sina');
 	if (tag === 'social_media.social_media' && params.type) {
-		assert(
-			Object.hasOwn(socialSources, params.type),
-			'Missing acceptance rule for social type=' + params.type,
-		);
+		if (!Object.hasOwn(socialSources, params.type)) return undefined;
 		const [hosts, path] = socialSources[params.type];
 		assert(
 			fromHost(url, hosts) && url.pathname !== '/' && (!path || path.test(url.pathname)),
@@ -811,10 +844,9 @@ function checkSelectedResult(tag, params, result) {
 		return true;
 	}
 	if (tag === 'legal.legislation' && params.jurisdiction === 'US' && params.collection) {
-		assert(
-			matchesCollection(url, params.collection),
-			'Expected a document from ' + params.collection,
-		);
+		const matches = matchesCollection(url, params.collection);
+		if (matches === undefined) return undefined;
+		assert(matches, 'Expected a document from ' + params.collection);
 		if (params.collection === 'BILLS' && params.congress) {
 			const congress = /\/bill\/(\d+)[a-z]+-congress\/|\/BILLS-(\d+)[a-z]/i.exec(url.pathname);
 			if (congress)
@@ -864,7 +896,9 @@ function checkSelectedResult(tag, params, result) {
 	if (tag === 'academic.citation' && (params.op ?? 'metadata') === 'metadata') {
 		const doi = params.id_type === 'doi' || /^10\.\d+\//.test(params.id) ? params.id : params.doi;
 		if (doi) {
-			assert(matchesDoi(result, url, doi), 'Expected metadata for DOI ' + doi);
+			const match = matchesDoi(result, url, doi);
+			requireEvidence(match !== undefined, 'No record DOI available to verify ' + doi);
+			assert(match, 'Expected metadata for DOI ' + doi);
 			return true;
 		}
 	}
@@ -873,8 +907,8 @@ function checkSelectedResult(tag, params, result) {
 		return true;
 	}
 	if (tag === 'academic.dataset' && params.client_id) {
+		if (!Object.hasOwn(datasetSources, params.client_id)) return undefined;
 		const source = datasetSources[params.client_id];
-		assert(source, 'Missing dataset source rule for ' + params.client_id);
 		assert(
 			(fromHost(url, [source[0]]) && source[1].test(decodeURIComponent(url.pathname))) ||
 				(fromHost(url, ['doi.org']) && source[2].test(decodeURIComponent(url.pathname).slice(1))),
@@ -946,23 +980,28 @@ function checkSelectedResult(tag, params, result) {
 					(row) => row[1].trim().toLowerCase(),
 				),
 			);
-			if (params.champion)
+			if (params.champion) {
+				const observed = champion ? [champion, ...entries] : entries;
+				requireEvidence(observed.length, 'No champion mastery records for ' + params.champion);
 				assert(
-					[champion, ...entries].some((name) => name?.includes(params.champion.toLowerCase())),
-					'Expected mastery for champion ' + params.champion,
+					observed.every((name) => name.includes(params.champion.toLowerCase())),
+					'Expected mastery filtered to champion ' + params.champion,
 				);
+			}
 			return Boolean(champion || entries.length);
 		}
 		return true;
 	}
-	return false;
+	// No operation-specific assertion covers this request.
+	return undefined;
 }
 
-export function checkSearchResults({ tag, params = {}, max_results }, results) {
+function evaluateResults({ tag, params = {}, max_results }, results, strict) {
 	const limit = max_results ?? 10;
 	assert(Array.isArray(results) && results.length > 0, 'Expected a non-empty result set');
 	assert(results.length <= limit, 'More results than max_results');
-	let semantic = true;
+	let status = 'verified';
+	let reason;
 	for (const result of results) {
 		assert(
 			result &&
@@ -971,14 +1010,41 @@ export function checkSearchResults({ tag, params = {}, max_results }, results) {
 				),
 			'Expected a populated result record',
 		);
-		if (!checkSelectedResult(tag, params, result)) semantic = false;
+		try {
+			const checked = checkSelectedResult(tag, params, result);
+			if (checked === undefined) status = 'nonemptyOnly';
+			if (checked === false) {
+				status = 'unverified';
+				reason ??= 'Result lacks evidence for the requested operation or filters';
+			}
+		} catch (error) {
+			if (strict || !(error instanceof MissingEvidence)) throw error;
+			status = 'unverified';
+			reason ??= error.message;
+		}
 	}
-	const ordered = tag === 'academic.paper' && checkPaperOrder(params.sort, results);
-	if (
-		tag === 'academic.paper' &&
-		limit >= 2 &&
-		['cited', 'date_asc', 'date_desc'].includes(params.sort)
-	)
-		return ordered;
-	return semantic || ordered;
+	if (tag === 'academic.paper' && params.sort) {
+		const ordered = checkPaperOrder(params.sort, results);
+		if (!ordered) {
+			status = 'unverified';
+			reason ??= 'Insufficient evidence of paper ordering';
+		} else if (status === 'nonemptyOnly') {
+			// A sort-only request can be verified from the order of multiple records.
+			status = 'verified';
+		}
+	}
+	return reason ? { status, reason } : { status };
+}
+
+// Strict assertion used by focused tests. Catalog reports also retain inconclusive observations.
+export function checkSearchResults(input, results) {
+	return evaluateResults(input, results, true).status === 'verified';
+}
+
+export function assessSearchResults(input, results) {
+	try {
+		return evaluateResults(input, results, false);
+	} catch (error) {
+		return { status: 'mismatch', reason: error.message };
+	}
 }

@@ -2,6 +2,13 @@ import type { IDataObject } from 'n8n-workflow';
 import type { CapabilityRuleMap, FieldRule } from './parameterRules';
 import { choice, format } from './parameterRules';
 
+const aShareTicker: FieldRule = {
+	expected: 'a single A-share ticker containing a numeric code, such as 600519.SH',
+	matches: (value) =>
+		typeof value === 'string' &&
+		/\d/.test(value) &&
+		/^[\p{L}\d]+(?:[.:/_-][\p{L}\d]+)*$/u.test(value),
+};
 const quotePeriod = format(
 	/^(?:0*[1-9]\d*d|[15]y)$/,
 	'a positive day range such as 7d, or 1y or 5y',
@@ -80,12 +87,14 @@ function validateEsports(params: IDataObject): string | undefined {
 export const marketParameterRules: CapabilityRuleMap = {
 	'finance.calendar': {
 		fields: {
+			cn_code: forTypes(aShareTicker, 'earnings'),
 			type: choice('earnings', 'dividends', 'ipos', 'economic'),
 			period: forTypes(quotePeriod, 'dividends', 'ipos', 'economic'),
 		},
 	},
 	'finance.fundamental': {
 		fields: {
+			cn_code: aShareTicker,
 			type: choice('overview', 'income', 'balance', 'cashflow', 'indicator', 'holder'),
 			period: forTypes(choice('annual', 'quarter'), 'overview'),
 		},
@@ -109,6 +118,7 @@ export const marketParameterRules: CapabilityRuleMap = {
 	},
 	'finance.news': {
 		fields: {
+			cn_code: forTypes(aShareTicker, 'announcement'),
 			type: choice('general', 'stock', 'flash', 'announcement'),
 			period: quotePeriod,
 			news_src: forTypes(

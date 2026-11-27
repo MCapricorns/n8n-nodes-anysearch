@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { searchOutputDigest } from './search-output-digest.cjs';
 import { catalogCoverage, catalogDefinitions } from './catalog-checks.mjs';
-import { checkSearchResults } from './result-checks.mjs';
+import { assessSearchResults, checkSearchResults } from './result-checks.mjs';
 
 const cases = [
 	{
@@ -86,6 +88,18 @@ const cases = [
 	},
 ];
 
+function safeId(id) {
+	return typeof id === 'string' && /^(?!as_sk_)[A-Za-z0-9_-]{1,64}$/i.test(id) ? id : undefined;
+}
+
+function quotaLabel(id) {
+	return safeId(id) ? `HTTP 402 (${id})` : 'HTTP 402';
+}
+
+function isQuotaResponse(item) {
+	return (item?.http_status ?? item?.details?.http_status) === 402;
+}
+
 function checkItem(entry, item) {
 	if (entry.invalidFields) {
 		assert.equal(typeof item.error, 'string');
@@ -144,6 +158,10 @@ export function addCapabilityChecks(add, credential) {
 					if (!single) assert.equal(json.query_index ?? json.details?.query_index, i);
 					checkItem(entries[i], json);
 				} catch (error) {
+					if (isQuotaResponse(json)) {
+						failures.push(quotaLabel(json.request_id ?? json.details?.request_id));
+						continue;
+					}
 					failures.push(
 						entries[i].query +
 							' (' +
@@ -189,12 +207,20 @@ export function checkCapabilityRequests(requests, tests) {
 					request.request_id,
 					'Request ID differs from this node output',
 				);
-				assert.deepEqual(request.body, {
+				const expected = {
 					query: entry.query,
 					tag: entry.tag,
 					params: entry.expectedParams ?? entry.params,
 					max_results: 1,
-				});
+				};
+				assert(
+					isDeepStrictEqual(request.body, expected),
+					'Outgoing search body differs from the expected request',
+				);
+				if (request.status === 402 && isQuotaResponse(item)) {
+					failures.push(quotaLabel(request.request_id));
+					continue;
+				}
 				assert.equal(request.status, 200, entry.query);
 			} catch (error) {
 				failures.push(entry.query + ': ' + error.message);
@@ -213,10 +239,11 @@ export function catalogRequestReport(records, requests, domains) {
 	const seen = new Set();
 	const bodies = [];
 	const failures = [];
+	const unverified = [];
 	let semanticChecks = 0;
 	let nonemptyOnly = 0;
 	for (const [index, { input, output, expectedParams }] of records.entries()) {
-		const id = output?.request_id ?? output?.details?.request_id;
+		const id = safeId(output?.request_id ?? output?.details?.request_id);
 		try {
 			assert(
 				typeof id === 'string' && id && !seen.has(id),
@@ -227,12 +254,18 @@ export function catalogRequestReport(records, requests, domains) {
 			assert.notEqual(sent, null, 'Multiple HTTP requests share the output request ID');
 			assert(sent, 'Expected a captured HTTP request');
 			const expected = expectedParams === undefined ? input : { ...input, params: expectedParams };
-			assert.deepEqual(
-				sent.body,
-				expected,
+			assert(
+				isDeepStrictEqual(sent.body, expected),
 				'Outgoing search body differs from the expected request',
 			);
 			bodies.push(sent.body);
+			if (sent.status === 402 && isQuotaResponse(output)) {
+				failures.push({ http_status: 402, request_id: id });
+				continue;
+			}
+			if (sent.status === 402 || isQuotaResponse(output)) {
+				throw new Error('Wire and node HTTP statuses differ');
+			}
 			assert(!output.error, output.error);
 			assert.equal(sent.status, 200, 'Expected a successful HTTP request');
 			assert.equal(sent.code, 0, 'Expected a successful REST response');
@@ -243,8 +276,43 @@ export function catalogRequestReport(records, requests, domains) {
 					output.results.length,
 					'metadata.total_results differs from the returned count',
 				);
-			if (checkSearchResults(input, output.results)) semanticChecks++;
-			else nonemptyOnly++;
+			// Older captures recorded the entire wire envelope, which cannot establish
+			// equivalence to the node's projected search output.
+			if (!sent.searchOutputDigest) {
+				unverified.push({
+					index,
+					tag: input.tag ?? 'general',
+					request_id: id,
+					reason: 'Missing wire search output digest',
+				});
+				continue;
+			}
+			assert.equal(
+				searchOutputDigest(output.results, output.metadata),
+				sent.searchOutputDigest,
+				'Wire and node search results or metadata differ',
+			);
+			const result = assessSearchResults(input, output.results);
+			const evidence = {
+				index,
+				tag: input.tag ?? 'general',
+				request_id: id,
+				reason: result.reason,
+			};
+			switch (result.status) {
+				case 'verified':
+					semanticChecks++;
+					break;
+				case 'nonemptyOnly':
+					nonemptyOnly++;
+					break;
+				case 'unverified':
+					unverified.push(evidence);
+					break;
+				case 'mismatch':
+					failures.push({ ...evidence, kind: 'resultMismatch' });
+					break;
+			}
 		} catch (error) {
 			failures.push({ index, tag: input.tag ?? 'general', request_id: id, reason: error.message });
 		}
@@ -253,9 +321,10 @@ export function catalogRequestReport(records, requests, domains) {
 		domains: domains.length,
 		...catalogCoverage(bodies, catalogDefinitions(domains)),
 		cases: records.length,
-		verified: records.length - failures.length,
+		verified: semanticChecks,
 		semanticChecks,
 		nonemptyOnly,
+		unverified,
 		failures,
 	};
 }
@@ -266,10 +335,10 @@ export function checkCatalogRequests(report) {
 		report.failures.length,
 		0,
 		report.failures
-			.map(
-				({ index, tag, request_id, reason }) =>
-					'Catalog[' + index + '] ' + tag + ' (' + (request_id ?? 'no request ID') + '): ' + reason,
-			)
+			.map(({ index, tag, request_id, reason, http_status }) => {
+				if (http_status === 402) return quotaLabel(request_id);
+				return `Catalog[${index}] ${tag} (${request_id ?? 'no request ID'}): ${reason}`;
+			})
 			.join('\n'),
 	);
 	return report;

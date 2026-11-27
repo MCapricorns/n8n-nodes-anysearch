@@ -49,9 +49,10 @@ export const booleanValue: FieldRule = {
 	expected: 'true or false',
 };
 
-type DateFormat = 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD' | 'DD/MM/YYYY';
+type DateFormat = 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'YYYYMMDD';
 
 const datePatterns: Record<DateFormat, RegExp> = {
+	YYYYMMDD: /^(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})$/,
 	YYYY: /^(?<year>\d{4})$/,
 	'YYYY-MM': /^(?<year>\d{4})-(?<month>\d{2})$/,
 	'YYYY-MM-DD': /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/,
@@ -81,3 +82,40 @@ export function dateValue(...formats: DateFormat[]): FieldRule {
 		expected: `a valid date in ${formats.join(' or ')} format`,
 	};
 }
+
+// These fields give date examples and leave other provider-specific formats open.
+const yearFirstPatterns = [
+	datePatterns.YYYY,
+	datePatterns['YYYY-MM'],
+	datePatterns['YYYY-MM-DD'],
+	datePatterns.YYYYMMDD,
+];
+
+function yearFirstPattern(value: string): RegExp | undefined {
+	return yearFirstPatterns.find((entry) => entry.test(value));
+}
+
+function providerDateKey(value: unknown): string | undefined {
+	if (typeof value !== 'string') return undefined;
+	const text = value.trim();
+	return yearFirstPattern(text) ? text.replace(/-/g, '') : undefined;
+}
+
+export function reversedProviderDates(start: unknown, end: unknown): boolean {
+	const lower = providerDateKey(start);
+	const upper = providerDateKey(end);
+	if (!lower || !upper) return false;
+	// A year or month can overlap a more precise date within it.
+	const precision = Math.min(lower.length, upper.length);
+	return lower.slice(0, precision) > upper.slice(0, precision);
+}
+
+export const providerDate: FieldRule = {
+	expected: 'a date with a valid calendar month and day when supplied',
+	matches(value) {
+		if (typeof value !== 'string' || value.trim() === '') return false;
+		const text = value.trim();
+		const pattern = yearFirstPattern(text);
+		return pattern === undefined || validDate(text, pattern);
+	},
+};

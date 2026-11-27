@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { catalogRequestReport, checkCatalogRequests } from './e2e/capability-checks.mjs';
 import { catalogCoverage, changedDefinitions } from './e2e/catalog-checks.mjs';
-import { checkSearchResults } from './e2e/result-checks.mjs';
+import { searchOutputDigest } from './e2e/search-output-digest.cjs';
+import { assessSearchResults, checkSearchResults } from './e2e/result-checks.mjs';
 
 const cases = JSON.parse(await readFile(new URL('./e2e/search-cases.json', import.meta.url)));
 const domains = [
@@ -39,6 +40,7 @@ function matrix(inputs, outputs) {
 		status: 200,
 		code: 0,
 		resultCount: output.results.length,
+		searchOutputDigest: searchOutputDigest(output.results, output.metadata),
 	}));
 	return { records, requests };
 }
@@ -60,6 +62,7 @@ test('only matching, non-empty output joined to the actual request can pass cata
 		verified: 1,
 		semanticChecks: 1,
 		nonemptyOnly: 0,
+		unverified: [],
 		failures: [],
 	});
 	assert.throws(
@@ -76,7 +79,14 @@ test('only matching, non-empty output joined to the actual request can pass cata
 		/Multiple HTTP requests/,
 	);
 	records[0].output.results = [{ ...jobResult, url: 'https://www.youtube.com/watch?v=123' }];
+	assert.throws(
+		() => checkMatrix(records, requests, domains),
+		/Wire and node search results or metadata differ/,
+	);
+	requests[0].searchOutputDigest = searchOutputDigest(records[0].output.results);
 	assert.throws(() => checkMatrix(records, requests, domains), /linkedin_jobs/);
+	delete requests[0].searchOutputDigest;
+	assert.equal(catalogRequestReport(records, requests, domains).unverified.length, 1);
 });
 
 test('a complete expected request can include documented normalization and no extra fields', () => {
@@ -915,14 +925,177 @@ test('ranked, live game and champion mastery need evidence of the named operatio
 		assert.equal(checkSearchResults(input('mastery', { champion: filter }), [record]), true);
 		assert.throws(() => checkSearchResults(mastery, [record]), /Expected mastery/);
 	}
-	assert.equal(
-		checkSearchResults(mastery, [
-			{ url, snippet: 'Mastery Table ; Taliyah, 24, 236,743 pts ; Yasuo, 23, 225,480 pts' },
-		]),
-		true,
+	assert.throws(
+		() =>
+			checkSearchResults(mastery, [
+				{ url, snippet: 'Mastery Table ; Taliyah, 24, 236,743 pts ; Yasuo, 23, 225,480 pts' },
+			]),
+		/Expected mastery filtered to champion Yasuo/,
 	);
 	assert.throws(
 		() => checkSearchResults(mastery, [{ url, content: 'Follow my Yasuo fan account' }]),
 		/mastery/,
 	);
+});
+
+test('catalog distinguishes unverified filters, source mismatches and nonempty-only cases', () => {
+	const hot = { tag: 'social_media.social_media', params: { type: 'weibo_hot' }, max_results: 2 };
+	const post = { title: 'Python', url: 'https://m.weibo.cn/detail/123' };
+	const rankedPost = { ...post, content: '{"source":"weibo_hot","position":2}' };
+	const elsewhere = { url: 'https://www.python.org/' };
+	const { records, requests } = matrix(
+		[hot, hot, hot, { query: 'general' }],
+		[[rankedPost], [post], [post, elsewhere], [{ title: 'Generic result' }]],
+	);
+	const report = catalogRequestReport(records, requests, domains);
+	assert.equal(report.verified, 1);
+	assert.equal(report.semanticChecks, 1);
+	assert.equal(report.nonemptyOnly, 1);
+	assert.deepEqual(
+		report.unverified.map((item) => item.index),
+		[1],
+	);
+	assert.match(report.unverified[0].reason, /hot-list/);
+	assert.deepEqual(
+		report.failures.map((item) => [item.index, item.kind]),
+		[[2, 'resultMismatch']],
+	);
+});
+
+test('queue attribution, identity resolution and player-only mastery are inconclusive', () => {
+	const rank = {
+		title: 'GOLD',
+		url: 'https://op.gg/summoners/kr/by-puuid/P',
+		content: '{"puuid":"P","leaguePoints":97,"rank":"I","wins":8,"losses":3}',
+	};
+	const queue = {
+		tag: 'gaming.esports',
+		params: {
+			type: 'leaderboard',
+			region: 'kr',
+			tier: 'GOLD',
+			division: 'I',
+			queue: 'RANKED_SOLO_5x5',
+		},
+	};
+	assert.equal(assessSearchResults(queue, [rank]).status, 'unverified');
+	assert.equal(
+		assessSearchResults(queue, [{ ...rank, url: rank.url + '?queue=440' }]).status,
+		'mismatch',
+	);
+	assert.equal(
+		assessSearchResults(queue, [{ ...rank, url: rank.url + '?queue=420' }]).status,
+		'verified',
+	);
+	for (const extra of [
+		{ region: 'na', queueId: 420 },
+		{ division: 'IV', queueId: 420 },
+		{ queueId: [420] },
+	]) {
+		const content = JSON.stringify({ ...JSON.parse(rank.content), ...extra });
+		assert.equal(assessSearchResults(queue, [{ ...rank, content }]).status, 'mismatch');
+	}
+	const person = { tag: 'academic.person', params: { orcid: '0000-0002-1825-0097' } };
+	assert.equal(
+		assessSearchResults(person, [{ title: 'No selection', content: 'status: AMBIGUOUS_IDENTITY' }])
+			.status,
+		'unverified',
+	);
+	assert.equal(
+		assessSearchResults(person, [{ url: 'https://orcid.org/0000-0003-0530-4305' }]).status,
+		'mismatch',
+	);
+	const profile = { url: 'https://masterychart.com/profile/kr/Hide+on+bush-KR1', title: 'Profile' };
+	const mastery = cases[93];
+	assert.equal(assessSearchResults(mastery, [profile]).status, 'unverified');
+	assert.equal(
+		assessSearchResults(mastery, [
+			{ ...profile, content: 'Mastery Table ; Yasuo, 23, 225,480 pts' },
+		]).status,
+		'verified',
+	);
+	const detail = {
+		metadata: { matchId: 'KR_7482819248' },
+		info: { participants: [{ championName: 'Galio' }] },
+	};
+	assert.equal(
+		assessSearchResults(cases[94], [
+			{ url: 'https://lolesports.com/', content: JSON.stringify(detail) },
+		]).status,
+		'verified',
+	);
+	assert.equal(
+		assessSearchResults(cases[94], [{ url: 'https://lolesports.com/', title: 'LoL Esports' }])
+			.status,
+		'mismatch',
+	);
+});
+
+test('quota evidence is limited to the status and request ID after a unique wire match', () => {
+	const { records, requests } = matrix([job], [[]]);
+	Object.assign(records[0].output, {
+		error: 'private vendor details',
+		details: { http_status: 402 },
+	});
+	Object.assign(requests[0], { status: 402, message: 'private vendor details' });
+	const report = catalogRequestReport(records, requests, domains);
+	assert.deepEqual(report.failures, [{ http_status: 402, request_id: 'request-0' }]);
+	assert.throws(
+		() => checkCatalogRequests(report),
+		(error) =>
+			error.message.includes('HTTP 402 (request-0)') &&
+			!error.message.includes('private vendor details'),
+	);
+	const duplicated = catalogRequestReport(records, [requests[0], requests[0]], domains);
+	assert.match(duplicated.failures[0].reason, /Multiple HTTP requests/);
+});
+
+test('paper ordering and available metadata cannot stand in for missing filters', () => {
+	const paper = (params, results) =>
+		assessSearchResults({ tag: 'academic.paper', params }, results).status;
+	const ordered = [
+		{ title: 'A', citationCount: 7 },
+		{ title: 'B', citationCount: 2 },
+	];
+	assert.equal(paper({ sort: 'cited' }, ordered), 'verified');
+	assert.equal(paper({ doi: '10.1234/example', sort: 'cited' }, ordered), 'unverified');
+	assert.equal(
+		paper({ authors: 'Alice Li', year: '2026' }, [{ title: 'A', year: 2026 }]),
+		'unverified',
+	);
+	assert.equal(
+		paper({ doi: '10.1234/example', year: '2026' }, [{ title: 'A', year: 2023 }]),
+		'mismatch',
+	);
+	assert.equal(paper({ language: 'EN' }, [{ title: 'A', language: 'en' }]), 'verified');
+});
+
+test('unknown source rules and malformed structured evidence cannot certify a result', () => {
+	const dataset = { tag: 'academic.dataset', params: { client_id: 'another.repository' } };
+	assert.equal(
+		assessSearchResults(dataset, [{ url: 'https://example.org/datasets/1' }]).status,
+		'nonemptyOnly',
+	);
+	const hot = { tag: 'social_media.social_media', params: { type: 'weibo_hot' } };
+	for (const fields of [
+		{ type: 'zhihu_hot', source: 'zhihu_hot', hot_rank: 1 },
+		{ type: 'weibo_hot', position: [2] },
+	]) {
+		assert.equal(
+			assessSearchResults(hot, [
+				{ url: 'https://m.weibo.cn/detail/123', content: JSON.stringify(fields) },
+			]).status,
+			'mismatch',
+		);
+	}
+	for (const participants of ['none', [{}], ['unknown']]) {
+		const content = JSON.stringify({
+			metadata: { matchId: 'KR_7482819248' },
+			info: { participants },
+		});
+		assert.equal(
+			assessSearchResults(cases[94], [{ url: 'https://lolesports.com/', content }]).status,
+			'mismatch',
+		);
+	}
 });

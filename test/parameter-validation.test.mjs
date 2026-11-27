@@ -140,3 +140,70 @@ test('documented defaults add or replace the fields needed in outbound requests'
 		assert.deepEqual(input, params, tag);
 	}
 });
+
+test('provider date examples reject impossible calendar values and preserve other representations', () => {
+	for (const [tag, field, type, invalid, valid] of [
+		['energy.electricity', 'date_start', 'EUElectricity', '2026-02-30', '2026-05-23'],
+		['energy.electricity', 'date_end', 'EUElectricity', '2026-13-01', '2026-05-24'],
+		['energy.production', 'date_start', 'USEnergyData', '2026-13', '2023-01'],
+		['ip.global', 'date_start', 'GlobalPatent', '20260229', '20240229'],
+	]) {
+		assertFieldError(tag, field, { type, [field]: invalid }, 'test');
+		for (const date of [valid, '2020', '2024-02-29', '2026-Q1']) {
+			const params = { type, [field]: date };
+			assert.deepEqual(capabilityParameters(node, tag, params, 'test'), params);
+		}
+	}
+});
+
+test('A-share identifiers are checked only for operations that use them', () => {
+	for (const [tag, type] of [
+		['finance.calendar', 'earnings'],
+		['finance.fundamental', 'income'],
+		['finance.news', 'announcement'],
+	]) {
+		for (const cn_code of ['not-a-ticker', 'not a ticker 1', '??1??', '600519..SH', 'SH:']) {
+			assertFieldError(tag, 'cn_code', { type, cn_code }, 'test');
+		}
+		for (const cn_code of ['600519.SH', '600519', 'BJ.920002', 'SSE:600519', 'SH600519']) {
+			const params = { type, cn_code };
+			assert.deepEqual(capabilityParameters(node, tag, params, 'test'), {
+				...params,
+				...expectedOverrides(tag, params),
+			});
+		}
+	}
+	for (const [tag, params] of [
+		['finance.calendar', { type: 'earnings', cn_code: '' }],
+		['finance.news', { type: 'announcement', cn_code: '' }],
+		['finance.fundamental', { type: 'overview', symbol: 'AAPL', cn_code: 'unused' }],
+		['finance.quote', { type: 'forex', cn_code: 'USDCNH.FXCM' }],
+	]) {
+		assert.deepEqual(capabilityParameters(node, tag, params, 'test'), {
+			...params,
+			...expectedOverrides(tag, params),
+		});
+	}
+});
+
+test('electricity date ranges respect the precision of both endpoints', () => {
+	const tag = 'energy.electricity';
+	const type = 'EUElectricity';
+	for (const [date_start, date_end] of [
+		['2026-05-24', '2026-05-23'],
+		['20260525', '2026-05-23'],
+		['2027-01', '2026'],
+	]) {
+		assertFieldError(tag, 'date_end', { type, date_start, date_end }, 'test');
+	}
+	for (const [date_start, date_end] of [
+		['2026-05-24', '2026-05-24'],
+		['2026-05-24', '2026'],
+		['2026', '2026-01-01'],
+		['2026-12', '2027'],
+		['2026-Q1', '2026-01'],
+	]) {
+		const params = { type, date_start, date_end };
+		assert.deepEqual(capabilityParameters(node, tag, params, 'test'), params);
+	}
+});
